@@ -2,6 +2,7 @@
   "name": "torre-indicadores",
   "main": "./worker.mjs",
   "compatibility_date": "2026-11-26",
+  "build": { "command": "npm run build" },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
