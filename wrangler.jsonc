@@ -10,7 +10,7 @@
   "d1_databases": [{
     "binding": "DB",
     "database_name": "torre-indicadores",
-    "database_id": "PREENCHER_ID_D1_DO_PROJETO_TORRE",
+    "database_id": "f904554c-d50c-46da-ad14-a17f8ae529b4",
     "migrations_dir": "./migrations"
   }]
 }
