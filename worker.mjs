@@ -71,7 +71,7 @@ async function api(request,env,path){
  }
  const id=path.slice('/api/data/'.length);
  if(!idPattern.test(id))return fail('Rota inválida.',404);
- if(request.method==='PUT'||request.method==='DELETE')return update(request,env.DB,id);
+ if(request.method==='PUT'||request.method==='DELETE')return fail('O painel público está em modo de consulta. A edição de bases requer acesso administrativo.',403);
  if(request.method==='GET'){
   const result=await env.DB.prepare('SELECT content FROM source_chunks WHERE source_id = ? ORDER BY seq').bind(id).all();
   return result.results.length?json({content:result.results.map(x=>x.content).join('')}):fail('Base não encontrada.',404);
