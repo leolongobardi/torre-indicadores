@@ -130,7 +130,7 @@ const Fonte=(()=>{
   }
   const order=(a,b)=>a[0].localeCompare(b[0])||a[1]-b[1];
   const d=[...days.values()].sort(order),month=d.at(-1)?.[0].slice(0,7);
-  return {day:d,movements:movements.filter(r=>month&&r[0].startsWith(month)).sort((a,b)=>order(a,b)||a[4]-b[4]),
+  return {day:d,allMovements:movements.sort((a,b)=>order(a,b)||a[4]-b[4]),movements:movements.filter(r=>month&&r[0].startsWith(month)),
    pump:pump.filter(r=>month&&r[0].startsWith(month)).sort(order),
    audit:{source:sourceCount,rows:byId.size}};
  }
@@ -169,8 +169,16 @@ const Fonte=(()=>{
     const subset=list.filter(r=>key(r[10])===s);
     return steps[1]!=null&&subset.length?round(meanSum(subset,13),4):null;
    });
+   const first=list.find(r=>r[11])?.[11]??null;
+   const field=list.map(r=>({part:statuses.indexOf(key(r[10])),minutes:r[13]}));
+   const aggregate=events=>events.length&&events.every(e=>e.minutes!=null)?
+    [events.reduce((v,e)=>v+e.minutes,0),...statuses.map((_,i)=>{
+     const hits=events.filter(e=>e.part===i);
+     return hits.length?hits.reduce((v,e)=>v+e.minutes,0):null;
+    })]:[null,null,null,null,null];
+   const kept=field.filter(({part,minutes:m})=>m==null||part<0||m>=0&&(part===1?m<120:m<=[240,120,60,60][part]));
    trips.push([(sets[0][0]??a[0])[0],id,by(7,by(14,'Sem modal')),by(3,'Sem mesorregião'),by(2,'Sem bloco'),crane,by(4,'Sem talhão'),by(6,'Sem prefixo'),
-    distance.length?round(distance.reduce((x,y)=>x+y,0),3):null,mask,...steps,...sub]);
+    distance.length?round(distance.reduce((x,y)=>x+y,0),3):null,mask,...steps,...sub,first,aggregate(field),aggregate(kept)]);
   }
   return {trips:trips.sort((a,b)=>a[0].localeCompare(b[0])||a[1].localeCompare(b[1])),audit:{rows,noId,invalidMinutes,unmapped}};
  }

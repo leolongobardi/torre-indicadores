@@ -45,7 +45,7 @@ const group=(rows,key)=>{
 };
 const timeHM=n=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(Math.floor(n%60)).padStart(2,'0');
 const state={fuelTab:location.hash==='#postos/importacao'?'importacao':'visao',cycleTab:location.hash==='#ciclo/importacao'?'importacao':'visao',station:'all',basis:'all',scScope:'all',rank:'modal',loadRank:'meso',dropRank:'modal',quality:'all',page:1,
- query:'',sort:'avg',up:false,modal:'',meso:'',bloco:'',grua:'',inicio:cycleMin,fim:cycleMax};
+ outliers:'excluir',campoDia:cycleMax,postoDia:'',query:'',sort:'avg',up:false,modal:'',meso:'',bloco:'',grua:'',inicio:cycleMin,fim:cycleMax};
 let charts=[],lastCaseRows=[];
 const controller=new AbortController();
 window.stopTorreDashboard=()=>controller.abort();
@@ -57,7 +57,7 @@ const kpis=rows=>`<div class="kpis">${rows.map(([label,v,note=''])=>`<div class=
 const panel=(title,sub,body,tools='')=>`<section class="panel"><div class="phead"><div><h2>${title}</h2>${sub?`<p>${sub}</p>`:''}</div>${tools}</div>${body}</section>`;
 const table=(headers,rows,cls='')=>`<div class="tablewrap"><table class="${cls}"><thead><tr>${headers.map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${headers.length}" class="empty">Nenhum registro neste recorte</td></tr>`}</tbody></table></div>`;
 const legend=items=>`<div class="legend">${items.map(([c,l])=>`<span><i style="background:${c}"></i>${l}</span>`).join('')}</div>`;
-const heading=(title,sub,period)=>`<header class="top"><div><h1>${title}</h1><p class="sub">${sub}</p></div><div class="period">${period}</div></header>`;
+const heading=(title,sub,period)=>`<header class="top"><div><h1>${title}</h1><p class="sub">${sub}</p></div></header>`;
 const note=s=>`<p class="note">${s}</p>`;
 const footer=(s,content)=>`<footer class="sources"><details><summary>Fonte e critérios</summary>${content}</details><p>${s}</p></footer>`;
 const pageRows=(rows,count=20)=>{
@@ -65,10 +65,11 @@ const pageRows=(rows,count=20)=>{
  return [rows.slice((curr-1)*count,curr*count),`<div class="pagination"><button data-page="${curr-1}" ${curr<=1?'disabled':''}>Anterior</button><span>${f(curr,0)} de ${f(pages,0)} · ${f(rows.length,0)} registros</span><button data-page="${curr+1}" ${curr>=pages?'disabled':''}>Próxima</button></div>`];
 };
 function stacked(rows,colors,daily=false,cap=null){
+ const peakVolume=Math.max(1,...rows.map(r=>r[4]||0));
  const max=cap||Math.max(1,...rows.map(r=>r[1].reduce((a,v)=>a+(v||0),0)));
- return `<div class="plot-scroll"><div class="column-chart ${daily?'daily':''}">${rows.map(([label,vals,details='',annual=false])=>{
+ return `<div class="plot-scroll"><div class="column-chart ${daily?'daily':''}">${rows.map(([label,vals,details='',annual=false,volume=null])=>{
   const total=vals.reduce((a,v)=>a+(v||0),0);
-  return `<div class="column-item ${annual?'annual':''}" title="${text(details)}"><div class="column-shaft"><b>${vals.every(v=>v==null)?'—':f(total)}</b><div class="bar-stack">${vals.map((v,j)=>`<i style="height:${Math.max(0,(v||0)/max*153)}px;background:${colors[j]}"></i>`).join('')}</div></div><span>${label}</span></div>`;
+  return `<div class="column-item ${annual?'annual':''}" title="${text(details)}">${volume==null?'':'<small class="vol-num" style="background:linear-gradient(to top,#dcebf3 '+(volume/peakVolume*100)+'%,transparent 0)">'+f(volume,0)+'</small>'}<div class="column-shaft"><b>${vals.every(v=>v==null)?'—':f(total)}</b><div class="bar-stack">${vals.map((v,j)=>`<i style="height:${Math.max(0,(v||0)/max*153)}px;background:${colors[j]}"></i>`).join('')}</div></div><span>${label}</span></div>`;
  }).join('')}</div></div>`;
 }
 function chart(label,draw,short=false){
@@ -115,9 +116,9 @@ function scatter(points,color,max){
 
 const movements=data.fuel.movements.filter(r=>r[0].startsWith(activeFuel));
 const pump=data.fuel.pump.filter(r=>r[0].startsWith(activeFuel));
-const fuelNames=['Total',...station];
+const fuelNames=[...station,'Total'];
 const fuelStationOpts=[['all','Todos os postos'],...station.map((s,i)=>[i,s])];
-const fuelSub=[['visao','Visão geral'],['chegadas','Chegadas'],['parametros','Parâmetros'],['dispersao','Dispersão'],['simulacao','Simulação dos tempos'],['casos','Fila sem abastecimento'],['importacao','Importação']];
+const fuelSub=[['visao','Visão geral'],['chegadas','Chegadas'],['parametros','Parâmetros'],['dispersao','Dispersão'],['simulacao','Simulação dos tempos'],['diario','Posto analítico'],['importacao','Importação'],['casos','Fila sem abastecimento']];
 const activeStation=r=>state.station==='all'||r[1]===Number(state.station);
 function fuelStats(rows){
  const fueled=rows.filter(r=>r[8]>0),clean=fueled.filter(r=>r[9]),mins=clean.map(r=>r[5]+r[6]);
@@ -149,13 +150,13 @@ function fuelOverview(rows){
  const cells=kpis([
   ['Abastecimentos',f(a.fueled,0),monthLong(activeFuel)],
   ['Abastecimentos com fila',f(a.withQueue,0)],['Abastecimentos sem fila registrada',f(a.noQueue,0)],
-  ['Fila sem abastecimento',f(a.onlyQueue,0)],['Tempo total médio',min(a.total),'Fila + posto por movimento']
+  ['Fila sem abastecimento',f(a.onlyQueue,0)],['Fila média',min(a.q)],['Abastecimento médio',min(a.p)],['Tempo total médio',min(a.total),'Fila + posto por movimento']
  ]);
- const groups=[movements,...station.map((_,i)=>movements.filter(r=>r[1]===i))].map(fuelStats);
+ const groups=[...station.map((_,i)=>movements.filter(r=>r[1]===i)),movements].map(fuelStats);
  const stats=[
   ['Abastecimentos','fueled',0],['Com fila','withQueue',0],['Sem fila registrada','noQueue',0],['Fila sem abastecimento','onlyQueue',0],
   ['Prefixos distintos','unique',0],['Fila média (min)','q',1],['Abastecimento médio (min)','p',1],['Tempo total médio (min)','total',1],
-  ['Mediana do total (min)','med',1],['P90 do total (min)','p90',1],['Horas em cerca registradas','elapsed',1]
+  ['Mediana do total (min)','med',1],['P90 do total (min)','p90',1],['Total acumulado de fila + abastecimento (h)','elapsed',1]
  ];
  const compare=table(['Indicador',...fuelNames],stats.map(([l,k,d])=>[l,...groups.map(g=>f(k==='elapsed'?g[k]/60:g[k],d))]));
  const daily=fuelDates.map(d=>{
@@ -188,7 +189,7 @@ function loadCapacity(){
  fetch('/api/data/capacidade',{cache:'no-store'}).then(async r=>{
   if(!r.ok)throw Error('Não foi possível carregar a capacidade.');
   capacityData=await r.json();
- }).catch(e=>capacityError=e.message).finally(()=>{capacityLoading=false;if(['chegadas','parametros'].includes(state.fuelTab))render();});
+ }).catch(e=>capacityError=e.message).finally(()=>{capacityLoading=false;if(['chegadas','parametros','diario'].includes(state.fuelTab))render();});
 }
 function capacityEditor(){
  loadCapacity();
@@ -238,16 +239,13 @@ function fuelArrivals(){
  const max=Math.max(1,...matrices.flatMap(a=>a.flatMap(r=>r[1])));
  return station.map((s,i)=>{
   if(state.station!=='all'&&Number(state.station)!==i)return '';
-  const rows=matrices[i], ranges=Array.from({length:8},(_,j)=>rows.map(r=>r[1].slice(j*3,j*3+3).reduce((a,b)=>a+b,0)));
-  const labels=ranges.map((_,j)=>hour(j*3)+'–'+hour(j*3+3)), vals=ranges.map(mean);
-  const band=panel(s+' · chegadas médias','Média dos dias cobertos pela base do mês exibido, por faixa de três horas.',
-   bars(labels,vals,i?ochre:green,65)+table(['Faixa horária','Chegadas/dia','P10 a P90 por dia'],ranges.map((a,j)=>[labels[j],f(vals[j]),f(percentile(a,.1))+' a '+f(percentile(a,.9))])));
+  const rows=matrices[i];
   const hdr=['Data','Ciclo médio',...Array.from({length:24},(_,j)=>hour(j)),'Dia'];
   const html=`<div class="tablewrap"><table class="heat"><thead><tr>${hdr.map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(([d,counts,t])=>{
    const cells=counts.map((v,h)=>{const [bg,fg]=heatColor(v,max);return `<td style="background:${bg};color:${fg}" title="${iso(d)} às ${hour(h)}: ${v} chegadas">${v||'·'}</td>`;}).join('');
    return `<tr><td>${iso(d)}</td><td>${min(t)}</td>${cells}<td>${f(counts.reduce((a,b)=>a+b,0),0)}</td></tr>`;
   }).join('')}</tbody></table></div>`;
-  return band+panel(s+' · chegadas por data e hora','Cada célula é a contagem de chegadas. A coluna após a data mostra a média diária de fila + posto.',html+`<div class="heat-note"><span>0</span><span class="gradient"></span><span>${max} chegadas/h</span></div>`)+capacityHeat(s,i,rows,hdr);
+  return panel(s+' · chegadas por data e hora','Cada célula é a contagem de chegadas. A coluna após a data mostra a média diária de fila + posto.',html+`<div class="heat-note"><span>0</span><span class="gradient"></span><span>${max} chegadas/h</span></div>`)+capacityHeat(s,i,rows,hdr);
  }).join('');
 }
 function fuelScatter(){
@@ -290,6 +288,7 @@ function fuelCases(rows){
 }
 const emptyDashboard=(label,sub)=>panel(label,sub,'<button data-tab="importacao">Importar bases</button>');
 function fuel(){
+ if(state.fuelTab==='diario')return heading('Posto analítico','Resumo diário para envio por e-mail','')+tabs(fuelSub,state.fuelTab)+fuelDay();
  if(state.fuelTab==="parametros")return heading("Postos de combustível","Capacidade operacional","Parâmetros")+tabs(fuelSub,"parametros")+capacityEditor();
  if(state.fuelTab==='importacao')return heading('Postos de combustível','Gerencie as planilhas do painel','Importação')+tabs(fuelSub,'importacao')+Gerencia.html('fuel');
  if(!activeFuel)return heading('Postos de combustível','Permanência em cerca, volumes e chegadas','Sem dados')+tabs(fuelSub,state.fuelTab)+emptyDashboard('Nenhuma base de postos','Importe uma planilha para abrir os indicadores.');
@@ -303,11 +302,11 @@ function fuel(){
 
 const tripRows=data.cycle.trips;
 const groups={modal:'Modal',meso:'Mesorregião',bloco:'Bloco',grua:'Grua'};
-const tabsCycle=[['visao','Visão geral'],['rank','Modais e regiões'],['carga','Carregamento'],['descarga','Descarga'],['viagens','Conferência de viagens'],['importacao','Importação']];
+const tabsCycle=[['visao','Visão geral'],['rank','Modais e regiões'],['carga','Carregamento'],['campoDia','Carregamento analítico'],['campoSim','Simulação de tempos'],['descarga','Descarga'],['viagens','Conferência de viagens'],['importacao','Importação']];
 const options=(rows,index,all)=>[['',all],...[...new Set(rows.map(r=>r[index]))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(x=>[x,x])];
 function tripFilter(){
- return tripRows.filter(r=>r[0]>=state.inicio&&r[0]<=state.fim
-  &&['modal','meso','bloco','grua'].every(k=>!state[k]||r[xCycle[k]]===state[k]));
+ return tripRows.filter(r=> (state.cycleTab==='campoDia'?r[18]?.slice(0,10)===state.campoDia:r[0]>=state.inicio&&r[0]<=state.fim)
+  &&['modal','meso','bloco','grua'].every(k=>!state[k]||r[xCycle[k]]===state[k])).map(r=>{const fld=r[state.outliers==='excluir'?20:19];if(!fld)return r;const copy=r.slice();copy[11]=fld[0];copy.splice(14,4,...fld.slice(1));return copy;});
 }
 function tripStats(rows){
  const ready=rows.filter(validTrip);
@@ -333,7 +332,7 @@ function cycleOverview(rows){
   legend(stage.map((s,i)=>[stageColors[i],s]))+stacked(chartRows,stageColors,true)+
   table(['Data','Viagens','Completos válidos','Incompletos','Vazio min','Carga min','Carregado min','Descarga min','Total min','P90 min'],lines));
  const rankRows=cycleRankData(rows,'modal').filter(r=>r.m!=null).slice(0,6);
- return summary+panel('Tempo logístico por etapa','Todos os valores abaixo usam a mesma amostra de ciclos completos.',stepHtml)+chartPanel+
+ return fieldHistory(rows)+summary+panel('Tempo logístico por etapa','Todos os valores abaixo usam a mesma amostra de ciclos completos.',stepHtml)+chartPanel+
  panel('Modais com maior tempo médio','Ranking de ciclos completos. O volume por modal está na seção Modais e regiões.',rankBars(rankRows,'m'));
 }
 function cycleRankData(rows,k){
@@ -389,17 +388,87 @@ function stepDaily(rows,k,title){
  return panel(title,'Média por viagem com a etapa registrada e tempo válido.',
   stacked(charts,[stageColors[k-10]],true));
 }
+function dayInput(key,value){
+ return `<label>Dia <input type="date" required data-change="${key}" value="${value}"></label>`;
+}
+function fieldHistory(rows){
+ const valid=rows.filter(r=>r[11]!=null);
+ const colors=[...stageColors,'#9c9890'];
+ const one=(length,title)=>{
+  const buckets=[...group(valid,r=>r[0].slice(0,length))].sort(([a],[b])=>a.localeCompare(b));
+  const chartRows=buckets.map(([date,list])=>{
+   const components=parts.map((_,j)=>sum(list,14+j)/list.length);
+   const other=mean(series(list,11))-components.reduce((a,b)=>a+b,0);
+   return [date.slice(5)||date,components.concat(other),date,false,list.length];
+  });
+  const labels=chartRows.map((r,i)=>[length===7?buckets[i][0]:iso(buckets[i][0]),...r.slice(1)]);
+  return panel(title,'Minutos por viagem com etapa 2 válida. O número superior é o volume de viagens considerado em cada barra.',
+   legend([...parts,'Outros eventos'].map((p,i)=>[colors[i],p]))+stacked(labels,colors,length===10));
+ };
+ return one(7,'Tempo de campo por mês')+one(10,'Tempo de campo por dia');
+}
+function fieldDay(rows){
+ const eligible=rows.filter(r=>r[18]),valid=eligible.filter(r=>r[11]!=null);
+ const slots=Array.from({length:24},(_,i)=>i);
+ const counts=rs=>{const bins=Array(24).fill(0);for(const r of rs)bins[+r[18].slice(11,13)]++;return bins;};
+ const crane=[...group(eligible,r=>r[5])].sort(([a],[b])=>a.localeCompare(b));
+ const points=valid.map(r=>[Number(r[18].slice(11,13))+Number(r[18].slice(14,16))/60,r[11]]);
+ return panel('Chegadas por hora e grua','Primeiro início registrado na etapa 2 de cada viagem.',
+ bars(slots.map(hour),counts(eligible),green)+table(['Grua',...slots.map(hour),'Dia'],crane.map(([k,list])=>[text(k),...counts(list),list.length])) )+
+ panel('Dispersão do tempo de campo','Cada ponto representa uma viagem. Hora da chegada no eixo horizontal e minutos no vertical.',
+ chart('Tempo de campo por hora de chegada',el=>plot(el,Math.max(1,...points.map(p=>p[1]))*1.05,[0,6,12,18,24].map(h=>[h/24,h+'h']),(c,X,Y)=>{
+ c.fillStyle='#17755699';for(const [h,m] of points){c.beginPath();c.arc(X(h/24),Y(m),2.5,0,7);c.fill();}
+ })))+panel('Composição do tempo do dia','Contribuição média em minutos por viagem com etapa válida.',bars(parts,parts.map((_,i)=>valid.length?sum(valid,14+i)/valid.length:0),navy))+
+ kpis([['Chegadas',f(eligible.length,0)],['Tempo de campo médio',min(mean(series(valid,11)))],['P90',min(percentile(series(valid,11),.9))]]);
+}
+function fieldSim(rows){
+ const months=[...group(rows.filter(r=>r[11]!=null),r=>r[0].slice(0,7))].sort(([a],[b])=>a.localeCompare(b));
+ const result=[];
+ for(const [month,list] of months){
+  const ordered=[...list].sort((a,b)=>(b[16]??0)-(a[16]??0)||String(a[1]).localeCompare(String(b[1])));
+  const baseline=mean(series(list,11));
+  for(const pct of [0,10,20,30,40,50]){
+   const n=Math.floor(list.length*pct/100),avg=mean(series(ordered.slice(n),11));
+   result.push([month,pct+'%',f(n,0),f(list.length-n,0),min(avg),min(baseline-avg)]);
+  }
+ }
+ return panel('Tempo de campo por mês','Tempo observado em minutos por viagem.',bars(months.map(m=>m[0]),months.map(m=>mean(series(m[1],11))),green))+
+ panel('Impacto dos maiores tempos de carregamento','Em cada mês, ordenamos viagens pelo tempo de carregamento e retiramos a fração indicada. Ganho é a redução da média de campo na amostra restante.',
+ table(['Mês','Fração retirada','Retiradas','Consideradas','Campo médio','Ganho médio'],result));
+}
+function fuelDay(){
+ if(!state.postoDia){
+  const local=new Date().toLocaleDateString('sv-SE',{timeZone:'America/Sao_Paulo'});
+  const yesterday=new Date(local+'T12:00:00Z');yesterday.setUTCDate(yesterday.getUTCDate()-1);
+  state.postoDia=yesterday.toISOString().slice(0,10);
+ }
+ const date=state.postoDia,rows=(data.fuel.allMovements||data.fuel.movements).filter(r=>r[0]===date);
+ const controls='<div class="filters">'+dayInput('postoDia',date)+'<button data-print-report="1">Imprimir / salvar PDF</button></div>';
+ const summary=panel('Abastecimento · '+date.split('-').reverse().join('/'),'Indicadores do dia por posto e consolidado.',
+ table(['Posto','Com fila','Sem fila','Só fila','Prefixos','Fila média','Posto médio','Total médio'],[...station,'Total'].map((s,i)=>{
+  const a=fuelStats(i===2?rows:rows.filter(r=>r[1]===i));return [s,a.withQueue,a.noQueue,a.onlyQueue,a.unique,min(a.q),min(a.p),min(a.total)];
+ })));
+ if(!rows.length)return controls+panel('Sem registros em '+date.split('-').reverse().join('/'),'Selecione um dia coberto pelas bases importadas.','');
+ return controls+summary+station.map((s,i)=>{
+  const rs=rows.filter(r=>r[1]===i),counts=Array(24).fill(0);
+  for(const r of rs)if(r[8])counts[Math.min(23,Math.floor(r[4]/60))]++;
+  const hdr=['Data','Ciclo médio',...counts.map((_,h)=>hour(h)),'Dia'];
+  return panel(s+' · chegadas por hora','Quantidade de veículos com abastecimento.',bars(counts.map((_,h)=>hour(h)),counts,i?ochre:green))+
+  capacityHeat(s,i,[[date,counts,fuelStats(rs).total]],hdr);
+ }).join('');
+}
+
 function loading(rows){
  const valid=rows.filter(r=>r[11]!=null), x=stepSummary(valid,11);
  const s=parts.map((l,j)=>{
   const v=series(valid,j+14);
   return [l,f(v.length,0),valid.length?f(v.length/valid.length*100)+'%':'—',min(mean(v)),min(percentile(v,.90)),min(valid.length?sum(valid,j+14)/valid.length:null)];
  });
- return kpis([['Tempo de campo médio',min(x.m),'Etapa 2 · todas as subetapas'],['Viagens com etapa válida',f(x.n,0)],['Mediana',min(x.p50)],['P90',min(x.p90)],['Sem grua identificada',f(valid.filter(r=>r[5]==='Sem grua').length,0)]])+
+ return fieldHistory(rows)+kpis([['Tempo de campo médio',min(x.m),'Etapa 2 · todas as subetapas'],['Viagens com etapa válida',f(x.n,0)],['Mediana',min(x.p50)],['P90',min(x.p90)],['Fila + fila crítica',min(valid.length?(sum(valid,14)+sum(valid,15))/valid.length:null),'Por viagem com etapa 2 válida'],['Carregamento',min(valid.length?sum(valid,16)/valid.length:null),'Por viagem com etapa 2 válida']])+
  panel('O que compõe o tempo de campo','Fila de carga, fila crítica, carregamento e amarração vêm da coluna K.',
   table(['Subetapa','Viagens com status','% da etapa 2','Média quando registrada','P90 quando registrada','Contribuição à média da etapa'],s)+
   note('A contribuição divide o tempo do status por todas as viagens com etapa 2 válida. As quatro contribuições somam a média do tempo de campo.'))+
- stepDaily(valid,11,'Tempo de campo por dia')+stageRanking(valid,'loadRank',11,true);
+ stageRanking(valid,'loadRank',11,true);
 }
 function discharge(rows){
  const valid=rows.filter(r=>r[13]!=null), x=stepSummary(valid,13);
@@ -411,25 +480,25 @@ const tripStatus=r=>r[9]!==15?(invalidStep(r)?'Incompleto · tempo inválido':'I
 const maskText=r=>[1,2,3,4].filter(i=>!(r[9]&(1<<(i-1)))).join(', ')||'—';
 function cycleCases(rows){
  const options=[['all','Todos'],['complete','Completos'],['partial','Incompletos'],['invalid','Tempos inválidos']];
- const valid={all:()=>true,complete:validTrip,partial:r=>r[9]!==15,invalid:invalidStep};
+ const valid={all:()=>true,complete:r=>r[9]===15,partial:r=>r[9]!==15,invalid:invalidStep};
  const filtered=rows.filter(r=>valid[state.quality](r)&&r.slice(1,8).join(' ').toLowerCase().includes(state.query.toLowerCase()));
  lastCaseRows=filtered.map(r=>[r[0],r[1],r[7],r[2],r[3],r[4],r[5],r[6],tripStatus(r),maskText(r),...r.slice(10,14).map(x=>f(x)),validTrip(r)?f(total(r)):'—',f(r[8])]);
  const [view,pages]=pageRows(lastCaseRows,20);
  return panel('Viagens por ID','Uma linha por viagem. As etapas ausentes estão indicadas no campo Faltam.',
   `<div class="tools">${select('quality','Situação',state.quality,options)}${caseSearch('ID, prefixo, grua ou bloco')}<button data-export="cycle">Exportar CSV</button></div>`+
-  table(['Data','ID da viagem','Prefixo','Modal','Mesorregião','Bloco','Grua','Talhão','Situação','Faltam','Vazio min','Carga min','Carregado min','Descarga min','Total min','Km'],view.map(r=>r.map(text)))+pages);
+  kpis([['Viagens selecionadas',f(filtered.length,0)],['Completas',f(filtered.filter(r=>r[9]===15).length,0)],['Incompletas',f(filtered.filter(r=>r[9]!==15).length,0)],['Tempo total médio',min(mean(completeMinutes(filtered))),'Completas com tempo válido']])+table(['Data','ID da viagem','Prefixo','Modal','Mesorregião','Bloco','Grua','Talhão','Situação','Faltam','Vazio min','Carga min','Carregado min','Descarga min','Total min','Km'],view.map(r=>r.map(text)))+pages);
 }
 function cycle(){
  if(state.cycleTab==='importacao')return heading('Ciclo florestal','Gerencie as planilhas do painel','Importação')+tabs(tabsCycle,'importacao')+Gerencia.html('cycle');
  if(!cycleMin)return heading('Ciclo florestal','Tempo logístico por viagem','Sem dados')+tabs(tabsCycle,state.cycleTab)+emptyDashboard('Nenhuma base de ciclo','Importe uma planilha para abrir os indicadores.');
  const rows=tripFilter(), audit=data.cycle.audit;
- const displays={visao:cycleOverview,rank:cycleRanking,carga:loading,descarga:discharge,viagens:cycleCases};
+ const displays={visao:cycleOverview,rank:cycleRanking,carga:loading,campoDia:fieldDay,campoSim:fieldSim,descarga:discharge,viagens:cycleCases};
  const date=(k,l)=>`<label>${l}<input type="date" data-change="${k}" value="${state[k]}" min="${cycleMin}" max="${cycleMax}"></label>`;
  const mesoRows=state.meso?tripRows.filter(r=>r[3]===state.meso):tripRows;
  const filteredRows=state.bloco?mesoRows.filter(r=>r[4]===state.bloco):mesoRows;
- const controls=`<div class="filters">${date('inicio','De')}${date('fim','Até')}${select('modal','Modal',state.modal,options(tripRows,2,'Todos'))}${select('meso','Mesorregião',state.meso,options(tripRows,3,'Todas'))}${select('bloco','Bloco',state.bloco,options(mesoRows,4,'Todos'))}${select('grua','Grua',state.grua,options(filteredRows,5,'Todas'))}<button data-reset>Limpar filtros</button></div>`;
+ const controls=`<div class="filters">${state.cycleTab==='campoDia'?dayInput('campoDia',state.campoDia):date('inicio','De')+date('fim','Até')}${select('outliers','Outliers da etapa 2',state.outliers,[['excluir','Excluir apontamentos'],['incluir','Incluir apontamentos']])}${select('modal','Modal',state.modal,options(tripRows,2,'Todos'))}${select('meso','Mesorregião',state.meso,options(tripRows,3,'Todas'))}${select('bloco','Bloco',state.bloco,options(mesoRows,4,'Todos'))}${select('grua','Grua',state.grua,options(filteredRows,5,'Todas'))}<button data-reset>Limpar filtros</button></div>`;
  const dates=`${iso(cycleMin)} a ${iso(cycleMax)}/${cycleMax.slice(0,4)}`;
- return heading('Ciclo florestal','Tempo logístico por viagem, etapa e frente de operação',dates)+controls+tabs(tabsCycle,state.cycleTab)+displays[state.cycleTab](rows)+footer(
+ return heading('Ciclo florestal','Tempo logístico por viagem, etapa e frente de operação',dates)+controls+note('Filtro por apontamento da etapa 2: duração negativa em qualquer uma das quatro subetapas, fila crítica ≥ 120 min, fila > 240 min, carregamento ou amarração > 60 min. A exclusão preserva os demais eventos da viagem.')+tabs(tabsCycle,state.cycleTab)+displays[state.cycleTab](rows)+footer(
   'Fontes disponíveis na aba Importação de Ciclo.',
   `<p>Foram lidas ${f(audit.rows,0)} linhas. ${f(audit.noId,0)} sem ID de viagem válido em B foram excluídas. As viagens foram consolidadas por ID e atribuídas à data da etapa 1 quando disponível.</p><p>As etapas vêm da coluna J. O tempo soma os minutos de N por etapa. O total exige as etapas 1 a 4 com tempos válidos; ${f(audit.invalidMinutes,0)} linhas com tempos negativos ou inválidos foram desconsideradas nas métricas da etapa afetada. A distância soma os valores por linha de I.</p><p>Para a grua, prevalece o registro do status Carregamento quando disponível; na ausência dele, usa-se a informação da etapa 2. Divergências no status preferencial aparecem como Múltiplas gruas. A etapa 4 reúne a descarga e os demais registros de destino listados em K.</p>`);
 }
@@ -453,6 +522,7 @@ main.addEventListener('click',e=>{
  const target=e.target.closest('button');
  if(!target)return;
  const d=target.dataset;
+ if(d.printReport){window.print();return;}
  if(d.saveCap){saveCapacity(target);return;}
  if(d.removeSource){Gerencia.remove(d.removeSource,atualizarTorre);}
  else if(d.tab){
