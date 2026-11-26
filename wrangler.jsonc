@@ -1,0 +1,16 @@
+{
+  "name": "torre-indicadores",
+  "main": "./worker.mjs",
+  "compatibility_date": "2026-11-26",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/data", "/api/data/*"]
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "torre-indicadores",
+    "database_id": "PREENCHER_ID_D1_DO_PROJETO_TORRE",
+    "migrations_dir": "./migrations"
+  }]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "torre-indicadores",
+  "version": "2.0.0",
+  "private": true,
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:offline": "node scripts/build.mjs --offline",
+    "test": "node --test scripts/testes.cjs",
+    "seed:sql": "node scripts/seed-sql.cjs"
+  }
+}

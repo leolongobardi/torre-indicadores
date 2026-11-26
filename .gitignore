@@ -1,0 +1,6 @@
+dist/
+offline/
+node_modules/
+.wrangler/
+seed/
+dados.json
