@@ -117,7 +117,7 @@ const movements=data.fuel.movements.filter(r=>r[0].startsWith(activeFuel));
 const pump=data.fuel.pump.filter(r=>r[0].startsWith(activeFuel));
 const fuelNames=['Total',...station];
 const fuelStationOpts=[['all','Todos os postos'],...station.map((s,i)=>[i,s])];
-const fuelSub=[['visao','Visão geral'],['chegadas','Chegadas'],['dispersao','Dispersão'],['simulacao','Simulação dos tempos'],['casos','Fila sem abastecimento'],['importacao','Importação']];
+const fuelSub=[['visao','Visão geral'],['chegadas','Chegadas'],['parametros','Parâmetros'],['dispersao','Dispersão'],['simulacao','Simulação dos tempos'],['casos','Fila sem abastecimento'],['importacao','Importação']];
 const activeStation=r=>state.station==='all'||r[1]===Number(state.station);
 function fuelStats(rows){
  const fueled=rows.filter(r=>r[8]>0),clean=fueled.filter(r=>r[9]),mins=clean.map(r=>r[5]+r[6]);
@@ -180,6 +180,59 @@ function arrivalMatrix(rows){
   return [d,counts,fuelStats(day).total];
  });
 }
+let capacityData=null,capacityError='',capacityLoading=false;
+const weekdays=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+function loadCapacity(){
+ if(capacityLoading||capacityData||capacityError)return;
+ capacityLoading=true;
+ fetch('/api/data/capacidade',{cache:'no-store'}).then(async r=>{
+  if(!r.ok)throw Error('Não foi possível carregar a capacidade.');
+  capacityData=await r.json();
+ }).catch(e=>capacityError=e.message).finally(()=>{capacityLoading=false;if(['chegadas','parametros'].includes(state.fuelTab))render();});
+}
+function capacityEditor(){
+ loadCapacity();
+ if(!capacityData)return panel('Capacidade por hora',capacityError||'Carregando parâmetros…','');
+ return station.map((name,i)=>panel(name,'Capacidade em veículos por hora.',
+ table(['Hora',...weekdays],capacityData.grid[i].map((row,h)=>[hour(h),...row.map((n,d)=>
+  `<input data-cap="${i},${h},${d}" type="number" min="0" max="9999" step="1" required value="${n}" style="width:5em" aria-label="${name}, ${weekdays[d]}, ${hour(h)}">`)])))).join('')+
+ '<button data-save-cap="1">Salvar parâmetros</button> <span id="cap-status" role="status"></span>';
+}
+async function saveCapacity(button){
+ const grid=structuredClone(capacityData.grid);
+ for(const input of main.querySelectorAll('[data-cap]')){
+  if(!input.reportValidity())return;
+  const [s,h,d]=input.dataset.cap.split(',').map(Number);
+  grid[s][h][d]=input.valueAsNumber;
+ }
+ const status=document.getElementById('cap-status');
+ button.disabled=true;
+ try{
+  const r=await fetch('/api/data/capacidade',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({grid,revision:capacityData.revision})});
+  const result=await r.json();
+  if(!r.ok)throw Error(result.error);
+  capacityData={grid,revision:result.revision};status.textContent='Parâmetros salvos.';
+ }catch(e){status.textContent=e.message;}finally{button.disabled=false;}
+}
+function capacityHeat(name,i,rows,hdr){
+ loadCapacity();
+ if(!capacityData)return panel(name+' · chegadas versus capacidade',capacityError||'Carregando parâmetros…','');
+ const signed=n=>n>0?'+'+n:String(n);
+ const tr=rows.map(([date,counts,cycle])=>{
+  const day=new Date(date+'T00:00:00Z').getUTCDay();
+  let total=0;
+  const cells=counts.map((n,h)=>{
+   const limit=capacityData.grid[i][h][day],delta=n-limit;
+   total+=delta;
+   const shade=Math.min(Math.abs(delta)/20,1);
+   const color=delta>0?'hsl(4 68% '+(94-59*shade)+'%)':delta<0?'hsl(152 34% '+(96-22*shade)+'%)':'#f4f5f3';
+   return `<td style="background:${color};color:${delta>10?'white':'#182820'}" title="${iso(date)} · ${weekdays[day]} · ${hour(h)} · ${n} chegadas · capacidade ${limit}">${signed(delta)}</td>`;
+  }).join('');
+  return `<tr><td>${iso(date)}</td><td>${min(cycle)}</td>${cells}<td>${signed(total)}</td></tr>`;
+ }).join('');
+ return panel(name+' · chegadas versus capacidade','Chegadas menos capacidade. Vermelho indica excesso, zero indica equilíbrio e verde indica vagas disponíveis. A última coluna soma os deltas do dia.',
+ `<div class="tablewrap"><table class="heat"><thead><tr>${hdr.map(h=>'<th scope="col">'+h+'</th>').join('')}</tr></thead><tbody>${tr}</tbody></table></div>`);
+}
 function fuelArrivals(){
  const matrices=station.map((s,i)=>arrivalMatrix(movements.filter(r=>r[1]===i)));
  const max=Math.max(1,...matrices.flatMap(a=>a.flatMap(r=>r[1])));
@@ -194,7 +247,7 @@ function fuelArrivals(){
    const cells=counts.map((v,h)=>{const [bg,fg]=heatColor(v,max);return `<td style="background:${bg};color:${fg}" title="${iso(d)} às ${hour(h)}: ${v} chegadas">${v||'·'}</td>`;}).join('');
    return `<tr><td>${iso(d)}</td><td>${min(t)}</td>${cells}<td>${f(counts.reduce((a,b)=>a+b,0),0)}</td></tr>`;
   }).join('')}</tbody></table></div>`;
-  return band+panel(s+' · chegadas por data e hora','Cada célula é a contagem de chegadas. A coluna após a data mostra a média diária de fila + posto.',html+`<div class="heat-note"><span>0</span><span class="gradient"></span><span>${max} chegadas/h</span></div>`);
+  return band+panel(s+' · chegadas por data e hora','Cada célula é a contagem de chegadas. A coluna após a data mostra a média diária de fila + posto.',html+`<div class="heat-note"><span>0</span><span class="gradient"></span><span>${max} chegadas/h</span></div>`)+capacityHeat(s,i,rows,hdr);
  }).join('');
 }
 function fuelScatter(){
@@ -237,6 +290,7 @@ function fuelCases(rows){
 }
 const emptyDashboard=(label,sub)=>panel(label,sub,'<button data-tab="importacao">Importar bases</button>');
 function fuel(){
+ if(state.fuelTab==="parametros")return heading("Postos de combustível","Capacidade operacional","Parâmetros")+tabs(fuelSub,"parametros")+capacityEditor();
  if(state.fuelTab==='importacao')return heading('Postos de combustível','Gerencie as planilhas do painel','Importação')+tabs(fuelSub,'importacao')+Gerencia.html('fuel');
  if(!activeFuel)return heading('Postos de combustível','Permanência em cerca, volumes e chegadas','Sem dados')+tabs(fuelSub,state.fuelTab)+emptyDashboard('Nenhuma base de postos','Importe uma planilha para abrir os indicadores.');
  const filtered=movements.filter(activeStation);
@@ -399,6 +453,7 @@ main.addEventListener('click',e=>{
  const target=e.target.closest('button');
  if(!target)return;
  const d=target.dataset;
+ if(d.saveCap){saveCapacity(target);return;}
  if(d.removeSource){Gerencia.remove(d.removeSource,atualizarTorre);}
  else if(d.tab){
   const menu=nav();
