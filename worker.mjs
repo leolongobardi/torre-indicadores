@@ -108,9 +108,29 @@ async function update(request,db,id){
  return json({revision:revision+1},201);
 }
 
+const initialCapacity = [[[16, 24, 24, 24, 20, 20, 20], [16, 24, 24, 24, 20, 20, 20], [16, 24, 24, 24, 20, 20, 20], [8, 16, 16, 16, 12, 12, 12], [8, 12, 12, 12, 12, 12, 12], [16, 20, 20, 20, 16, 16, 16], [12, 24, 24, 24, 16, 16, 16], [8, 24, 24, 24, 16, 16, 16], [24, 28, 28, 28, 28, 28, 24], [24, 28, 28, 28, 28, 28, 24], [24, 28, 28, 28, 28, 28, 24], [16, 16, 16, 16, 16, 16, 16], [16, 20, 20, 20, 20, 20, 16], [16, 20, 20, 20, 20, 20, 16], [24, 28, 28, 28, 28, 28, 24], [24, 28, 28, 28, 28, 28, 24], [24, 24, 24, 24, 24, 24, 24], [24, 24, 24, 24, 24, 24, 24], [24, 24, 24, 24, 24, 24, 24], [16, 16, 16, 16, 16, 16, 16], [16, 16, 16, 16, 16, 16, 16], [16, 16, 16, 16, 16, 16, 16], [24, 24, 24, 24, 24, 24, 24], [20, 20, 20, 20, 20, 20, 20]], [[12, 12, 12, 12, 12, 12, 12], [12, 12, 12, 12, 12, 12, 12], [12, 12, 12, 12, 12, 12, 12], [8, 8, 8, 8, 8, 8, 8], [8, 8, 8, 8, 8, 8, 8], [8, 8, 8, 8, 8, 8, 8], [12, 12, 12, 12, 12, 12, 12], [8, 12, 12, 12, 12, 12, 8], [12, 24, 24, 24, 24, 24, 20], [12, 24, 24, 24, 24, 24, 20], [12, 24, 24, 24, 24, 24, 20], [8, 16, 16, 16, 16, 16, 16], [8, 16, 16, 16, 16, 16, 12], [8, 16, 16, 16, 16, 16, 12], [12, 24, 24, 24, 24, 24, 20], [8, 24, 24, 24, 24, 24, 20], [12, 20, 20, 20, 20, 20, 20], [12, 16, 16, 16, 16, 16, 16], [12, 8, 8, 8, 8, 8, 8], [8, 12, 12, 12, 12, 12, 12], [8, 8, 8, 8, 8, 8, 8], [8, 12, 12, 12, 12, 12, 12], [12, 16, 16, 16, 16, 16, 16], [8, 12, 12, 12, 12, 12, 12]]];
+async function capacity(request,db){
+ await db.prepare('CREATE TABLE IF NOT EXISTS station_capacity (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, grid TEXT NOT NULL)').run();
+ if(request.method==='GET'){
+  const row=await db.prepare('SELECT revision,grid FROM station_capacity WHERE id=1').first();
+  return json(row?{revision:row.revision,grid:JSON.parse(row.grid)}:{revision:0,grid:initialCapacity});
+ }
+ if(request.method!=='PUT')return fail('Método inválido.',405);
+ if(request.headers.get('Origin')!==new URL(request.url).origin)return fail('Origem inválida.',403);
+ if(!request.headers.get('Content-Type')?.startsWith('application/json') || Number(request.headers.get('Content-Length')||Infinity)>12000)return fail('Formato inválido.',400);
+ const {revision,grid}=await request.json().catch(()=>({}));
+ if(!Number.isSafeInteger(revision)||revision<0||!Array.isArray(grid)||grid.length!==2||
+ !grid.every(m=>Array.isArray(m)&&m.length===24&&m.every(r=>Array.isArray(r)&&r.length===7&&r.every(n=>Number.isSafeInteger(n)&&n>=0&&n<=9999))))return fail('Capacidade inválida.',400);
+ const stmt=revision===0?db.prepare('INSERT OR IGNORE INTO station_capacity VALUES(1,1,?)').bind(JSON.stringify(grid)):
+ db.prepare('UPDATE station_capacity SET grid=?,revision=revision+1 WHERE id=1 AND revision=?').bind(JSON.stringify(grid),revision);
+ const result=await stmt.run();
+ return result.meta.changes?json({revision:revision+1}):fail('Os parâmetros mudaram em outro aparelho. Recarregue a página.',409);
+}
+
 async function api(request,env,path){
  if(path==='/api/data/versao' && request.method==='GET')return json({importacaoPublica:true,formatos:['xlsx','xlsm'],validacao:'estrutura'});
  if(!env.DB)return fail('Banco de dados do Torre Indicadores indisponível.',503);
+ if(path==='/api/data/capacidade')return capacity(request,env.DB);
  if(path==='/api/data'&&request.method==='GET'){
   const [h,s]=await env.DB.batch([
    env.DB.prepare('SELECT revision FROM catalogue WHERE singleton=1'),
