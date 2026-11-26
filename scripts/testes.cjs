@@ -59,7 +59,7 @@ test('Menus de indicadores e importação renderizam com e sem bases',()=>{
  }
 });
 
-test('D1 grava, exclui e rejeita mutações com uma revisão desatualizada',async()=>{
+test('D1 importa novos conteúdos com qualquer nome e protege o catálogo',async()=>{
  const sqlite=new DatabaseSync(':memory:');
  const sample=(id,kind)=>({id:id.repeat(64),kind,name:id+'.xlsx',start:'2026-10-01',end:'2026-10-01',imported:'2026-11-26T12:00:00.000Z',count:1,skipped:0,content:gzipSync(JSON.stringify([[id]])).toString('base64')});
  const workerSeeds=seeds.length?seeds:[sample('a','fuel'),sample('b','fuel'),sample('c','cycle')];
@@ -89,12 +89,17 @@ test('D1 grava, exclui e rejeita mutações com uma revisão desatualizada',asyn
  const stored=await (await send('/'+seed.id)).json();
  assert.equal(stored.content,workerSeeds[0].content);
  const mutate=(method,id,body)=>send('/'+id,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
- const removed=await mutate('DELETE',seed.id,{revision:1});assert.equal(removed.status,200);
- assert.equal((await mutate('PUT',seed.id,{revision:1,source:seed,content:stored.content})).status,409);
- assert.equal((await send('/'+seed.id)).status,404);
- sqlite.exec(seedSql(workerSeeds));
- assert.equal((await send('/'+seed.id)).status,404);
- const added=await mutate('PUT',seed.id,{revision:2,source:seed,content:stored.content});assert.equal(added.status,201);
- assert.equal((await (await send()).json()).sources.length,3);
+ assert.equal((await mutate('DELETE',seed.id,{revision:1})).status,403);
+ for(const [kind,row] of [
+  ['fuel',['2026-12-01','id',0,'T','P',1,'2026-12-01T01:30:00',null,null,null,9]],
+  ['cycle',['2026-12-01','viagem','B','M',null,null,'P','Modal',10,1,'Carga',null,null,10,null]]
+ ]){
+  const source=await Fonte.make(kind,'Arquivo novo dezembro.xlsm',[row]);
+  const content=gzipSync(JSON.stringify(source.rows)).toString('base64');
+  const revision=(await (await send()).json()).revision;
+  assert.equal((await mutate('PUT',source.id,{revision,source,content})).status,201);
+  assert.equal((await mutate('PUT',source.id,{revision,source,content})).status,409);
+  assert.equal((await mutate('PUT',source.id,{revision:revision+1,source:{...source,name:'Outro nome.xlsx'},content})).status,409);
+ }
  sqlite.close();
 });
