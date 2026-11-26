@@ -115,6 +115,7 @@ async function update(request,db,id){
 }
 
 async function api(request,env,path){
+ if(path==='/api/data/versao' && request.method==='GET')return json({importacaoPublica:true,basesHabilitadas:Object.values(approved).map(report=>report.name)});
  if(!env.DB)return fail('Banco de dados do Torre Indicadores indisponível.',503);
  if(path==='/api/data'&&request.method==='GET'){
   const [h,s]=await env.DB.batch([
