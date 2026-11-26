@@ -14,6 +14,53 @@ const chunk=(db,id,seq,encoded,stamp)=>db.prepare(
  'INSERT INTO source_chunks SELECT ?, ?, ? WHERE '+commitCondition
 ).bind(id,seq,encoded,stamp);
 
+const approved = {
+  "7f8946d3120b4ca8699b1c19a891cfe3914ed3847c7fb75ab900d6706095c307": {
+    "kind": "fuel",
+    "name": "Resumo (9).xlsx",
+    "count": 88217,
+    "skipped": 1,
+    "start": "2026-07-01",
+    "end": "2026-09-30",
+    "size": 12956425
+  },
+  "8e698c9df783f5a06ec4c8de5011505d10d46b44880bb001a0cfcb91c6d0e523": {
+    "kind": "fuel",
+    "name": "Resumo (8).xlsx",
+    "count": 28830,
+    "skipped": 1,
+    "start": "2026-10-01",
+    "end": "2026-10-31",
+    "size": 4234471
+  },
+  "69a5a2ec804a240f3512cb406c673d039e1f45ed89043414e15b08d011f9a431": {
+    "kind": "cycle",
+    "name": "Ciclo_Base.xlsx",
+    "count": 104358,
+    "skipped": 1,
+    "start": "2026-11-01",
+    "end": "2026-11-23",
+    "size": 19346053
+  }
+};
+async function matchesReport(content, report, id) {
+ const compressed = Uint8Array.from(atob(content), c => c.charCodeAt(0));
+ const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+ const reader = stream.getReader();
+ const raw = new Uint8Array(report.size);
+ let offset = 0;
+ for (;;) {
+  const {done,value} = await reader.read();
+  if (done) break;
+  if (offset + value.length > raw.length) { await reader.cancel(); return false; }
+  raw.set(value,offset);
+  offset += value.length;
+ }
+ if (offset !== raw.length) return false;
+ const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', raw));
+ return Array.from(digest,b => b.toString(16).padStart(2,'0')).join('') === id;
+}
+
 async function update(request,db,id){
  const origin=request.headers.get('Origin');
  if(origin&&origin!==new URL(request.url).origin)return fail('Origem inválida.',403);
@@ -40,6 +87,12 @@ async function update(request,db,id){
  if(saving&&(!goodMeta(source,id)||typeof content!=='string'||!content.length||content.length%4||!/^H4sI[A-Za-z0-9+/]+={0,2}$/.test(content))){
   return fail('Dados da base inválidos.',400);
  }
+ const report = approved[id];
+ if (!report || Object.keys(report).some(k => k !== 'size' && source[k] !== report[k]))
+  return fail('Esta planilha ainda não está cadastrada para importação pública.',403);
+ try {
+  if (!await matchesReport(content,report,id)) return fail('Conteúdo diferente da base cadastrada.',400);
+ } catch { return fail('Conteúdo compactado inválido.',400); }
  const stamp=crypto.randomUUID();
  const gate=db.prepare('UPDATE catalogue SET revision = revision + 1, stamp = ? WHERE revision = ? AND '+
   (saving?'NOT ':'')+'EXISTS (SELECT 1 FROM sources WHERE id = ?)').bind(stamp,revision,id);
@@ -71,7 +124,9 @@ async function api(request,env,path){
  }
  const id=path.slice('/api/data/'.length);
  if(!idPattern.test(id))return fail('Rota inválida.',404);
- if(request.method==='PUT'||request.method==='DELETE')return fail('O painel público está em modo de consulta. A edição de bases requer acesso administrativo.',403);
+ if(request.method==='PUT' && Object.hasOwn(approved,id))return update(request,env.DB,id);
+ if(request.method==='PUT')return fail('Esta planilha ainda não está cadastrada para importação pública.',403);
+ if(request.method==='DELETE')return fail('O painel público está em modo de consulta. A edição de bases requer acesso administrativo.',403);
  if(request.method==='GET'){
   const result=await env.DB.prepare('SELECT content FROM source_chunks WHERE source_id = ? ORDER BY seq').bind(id).all();
   return result.results.length?json({content:result.results.map(x=>x.content).join('')}):fail('Base não encontrada.',404);
