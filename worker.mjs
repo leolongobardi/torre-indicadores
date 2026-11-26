@@ -14,53 +14,52 @@ const chunk=(db,id,seq,encoded,stamp)=>db.prepare(
  'INSERT INTO source_chunks SELECT ?, ?, ? WHERE '+commitCondition
 ).bind(id,seq,encoded,stamp);
 
-const approved = {
-  "7f8946d3120b4ca8699b1c19a891cfe3914ed3847c7fb75ab900d6706095c307": {
-    "kind": "fuel",
-    "name": "Resumo (9).xlsx",
-    "count": 88217,
-    "skipped": 1,
-    "start": "2026-07-01",
-    "end": "2026-09-30",
-    "size": 12956425
-  },
-  "8e698c9df783f5a06ec4c8de5011505d10d46b44880bb001a0cfcb91c6d0e523": {
-    "kind": "fuel",
-    "name": "Resumo (8).xlsx",
-    "count": 28830,
-    "skipped": 1,
-    "start": "2026-10-01",
-    "end": "2026-10-31",
-    "size": 4234471
-  },
-  "69a5a2ec804a240f3512cb406c673d039e1f45ed89043414e15b08d011f9a431": {
-    "kind": "cycle",
-    "name": "Ciclo_Base.xlsx",
-    "count": 104358,
-    "skipped": 1,
-    "start": "2026-11-01",
-    "end": "2026-11-23",
-    "size": 19346053
-  }
-};
-async function matchesReport(content, report, id) {
- const compressed = Uint8Array.from(atob(content), c => c.charCodeAt(0));
- const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
- const reader = stream.getReader();
- const raw = new Uint8Array(report.size);
- let offset = 0;
- for (;;) {
-  const {done,value} = await reader.read();
-  if (done) break;
-  if (offset + value.length > raw.length) { await reader.cancel(); return false; }
-  raw.set(value,offset);
-  offset += value.length;
- }
- if (offset !== raw.length) return false;
- const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', raw));
- return Array.from(digest,b => b.toString(16).padStart(2,'0')).join('') === id;
+const textCell = value => value === null || (typeof value === 'string' && value.length <= 512 && !/[<>\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value));
+const numberCell = value => value === null || Number.isFinite(value);
+const timestamp = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$/.test(value);
+function validRow(r,kind) {
+ if (!Array.isArray(r) || typeof r[0] !== 'string' || !calendar.test(r[0])) return false;
+ if (kind === 'fuel') return r.length === 11 && !!r[1] && [1,3,4].every(i=>textCell(r[i])) &&
+  [0,1].includes(r[2]) && [0,1].includes(r[5]) && timestamp(r[6]) &&
+  [7,8,9].every(i=>r[i]===null || timestamp(r[i])) && Number.isFinite(r[10]) && r[10]>=0;
+ return r.length===15 && [1,2,3,4,5,6,7,10,14].every(i=>textCell(r[i])) &&
+  [8,9,13].every(i=>numberCell(r[i])) && [11,12].every(i=>r[i]===null || timestamp(r[i]));
 }
-
+async function validReport(content,source,id) {
+ const reader = new Blob([Uint8Array.from(atob(content),c=>c.charCodeAt(0))]).stream()
+  .pipeThrough(new DecompressionStream('gzip')).getReader();
+ const chunks=[];
+ let bytes=0;
+ for (;;) {
+  const {done,value}=await reader.read();
+  if(done)break;
+  bytes+=value.length;
+  if(bytes>26_000_000){await reader.cancel();return false;}
+  chunks.push(value);
+ }
+ const raw=await new Blob(chunks).arrayBuffer();
+ const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',raw));
+ if(Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('')!==id)return false;
+ // Read a single normalized row at a time. Excel text may contain commas or brackets.
+ const input=new TextDecoder('utf-8',{fatal:true}).decode(raw);
+ if(input[0]!=='[' || input.at(-1)!==']')return false;
+ const rowPattern=/\[(?:[^\[\]"\\]|"(?:[^"\\]|\\.)*")*\]/y;
+ let pos=1,count=0,start=null,end=null,hasId=false;
+ while(pos<input.length-1){
+  rowPattern.lastIndex=pos;
+  const match=rowPattern.exec(input);
+  if(!match)return false;
+  const row=JSON.parse(match[0]);
+  if(!validRow(row,source.kind))return false;
+  count++;hasId ||= Boolean(row[1]);
+  if(start===null || row[0]<start)start=row[0];
+  if(end===null || row[0]>end)end=row[0];
+  pos=rowPattern.lastIndex;
+  if(pos===input.length-1)break;
+  if(input[pos++]!==',' || pos===input.length-1)return false;
+ }
+ return count===source.count && hasId && start===source.start && end===source.end;
+}
 async function update(request,db,id){
  const origin=request.headers.get('Origin');
  if(origin&&origin!==new URL(request.url).origin)return fail('Origem inválida.',403);
@@ -83,39 +82,34 @@ async function update(request,db,id){
  try{body=JSON.parse(encoded);}catch{return fail('JSON inválido.',400);}
  if(!Number.isSafeInteger(body?.revision)||body.revision<0)return fail('Revisão inválida.',400);
  const {revision,source,content}=body;
- const saving=request.method==='PUT';
- if(saving&&(!goodMeta(source,id)||typeof content!=='string'||!content.length||content.length%4||!/^H4sI[A-Za-z0-9+/]+={0,2}$/.test(content))){
+ if(!goodMeta(source,id)||typeof content!=='string'||!content.length||content.length%4||!/^H4sI[A-Za-z0-9+/]+={0,2}$/.test(content)){
   return fail('Dados da base inválidos.',400);
  }
- const report = approved[id];
- if (!report || Object.keys(report).some(k => k !== 'size' && source[k] !== report[k]))
-  return fail('Esta planilha ainda não está cadastrada para importação pública.',403);
- try {
-  if (!await matchesReport(content,report,id)) return fail('Conteúdo diferente da base cadastrada.',400);
- } catch { return fail('Conteúdo compactado inválido.',400); }
+ if(!/\.(xlsx|xlsm)$/i.test(source.name))return fail('Selecione um arquivo XLSX ou XLSM.',400);
+ try {if(!await validReport(content,source,id))return fail('Dados incompatíveis com o painel selecionado.',400);}
+ catch{return fail('Dados compactados inválidos.',400);}
  const stamp=crypto.randomUUID();
  const gate=db.prepare('UPDATE catalogue SET revision = revision + 1, stamp = ? WHERE revision = ? AND '+
-  (saving?'NOT ':'')+'EXISTS (SELECT 1 FROM sources WHERE id = ?)').bind(stamp,revision,id);
+  'NOT EXISTS (SELECT 1 FROM sources WHERE id = ?) AND '+
+  "(SELECT COUNT(*) FROM sources WHERE imported_at >= strftime('%Y-%m-%d','now')) < 24 AND "+
+  '(SELECT COALESCE(SUM(length(content)),0) FROM source_chunks) + ? <= 192000000').bind(stamp,revision,id,content.length);
  const writes=[gate];
- if(saving){
   writes.push(db.prepare('INSERT INTO sources SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE '+commitCondition)
    .bind(id,source.kind,source.name,source.start,source.end,new Date().toISOString(),source.count,source.skipped,stamp));
   for(let i=0;i<content.length;i+=600_000)writes.push(chunk(db,id,i/600_000,content.slice(i,i+600_000),stamp));
- }else{
-  writes.push(db.prepare('DELETE FROM source_chunks WHERE source_id = ? AND '+commitCondition).bind(id,stamp));
-  writes.push(db.prepare('DELETE FROM sources WHERE id = ? AND '+commitCondition).bind(id,stamp));
- }
+
  const [result]=await db.batch(writes);
  if(!result.meta.changes){
   const head=await db.prepare('SELECT revision FROM catalogue WHERE singleton=1').first();
   if(head.revision!==revision)return fail('As bases mudaram em outro aparelho. Recarregue antes de tentar novamente.',409);
-  return fail(saving?'Esta base já foi importada.':'Base não encontrada.',saving?409:404);
+  if(await db.prepare('SELECT id FROM sources WHERE id = ?').bind(id).first())return fail('Esta base já foi importada.',409);
+  return fail('Limite de importações diárias ou de armazenamento atingido.',429);
  }
- return json({revision:revision+1},saving?201:200);
+ return json({revision:revision+1},201);
 }
 
 async function api(request,env,path){
- if(path==='/api/data/versao' && request.method==='GET')return json({importacaoPublica:true,basesHabilitadas:Object.values(approved).map(report=>report.name)});
+ if(path==='/api/data/versao' && request.method==='GET')return json({importacaoPublica:true,formatos:['xlsx','xlsm'],validacao:'estrutura'});
  if(!env.DB)return fail('Banco de dados do Torre Indicadores indisponível.',503);
  if(path==='/api/data'&&request.method==='GET'){
   const [h,s]=await env.DB.batch([
@@ -125,8 +119,7 @@ async function api(request,env,path){
  }
  const id=path.slice('/api/data/'.length);
  if(!idPattern.test(id))return fail('Rota inválida.',404);
- if(request.method==='PUT' && Object.hasOwn(approved,id))return update(request,env.DB,id);
- if(request.method==='PUT')return fail('Esta planilha ainda não está cadastrada para importação pública.',403);
+ if(request.method==='PUT')return update(request,env.DB,id);
  if(request.method==='DELETE')return fail('O painel público está em modo de consulta. A edição de bases requer acesso administrativo.',403);
  if(request.method==='GET'){
   const result=await env.DB.prepare('SELECT content FROM source_chunks WHERE source_id = ? ORDER BY seq').bind(id).all();
@@ -140,3 +133,4 @@ export default {async fetch(request,env){
  try{return await api(request,env,path);}
  catch(error){console.error('Falha no catálogo de bases',error.message);return fail('Falha ao acessar o catálogo. Confira se a migração D1 foi aplicada.',500);}
 }};
+
