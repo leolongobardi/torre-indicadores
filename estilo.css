@@ -95,3 +95,16 @@ th button.sort{background:transparent;border:0;padding:0;min-height:0;line-heigh
  .tablewrap table{min-width:0!important;width:100%;font-size:8pt}
  .tablewrap th,.tablewrap td{padding:2px!important;overflow-wrap:anywhere}
 }
+
+.field-highlights .phead{margin-bottom:2px}
+.field-highlights p{margin:2px 0;line-height:1.25}
+.field-report .legend{font-size:10px;gap:4px 9px;margin:4px 0}
+.field-report .legend i{width:7px;height:7px}
+.field-report .field-agenda-link{background:none;border:0;border-radius:0;min-height:0;color:inherit;padding:0!important;text-decoration:underline;box-shadow:none}
+.field-arrivals td,.field-arrivals th{line-height:1.1;padding-top:1px;padding-bottom:1px}
+.field-offenders small{display:inline}
+@media print{
+ .field-report .legend{font-size:7pt}
+ .field-highlights .phead{margin-bottom:1pt}
+ .field-highlights p{margin:1pt 0}
+}
