@@ -82,21 +82,30 @@ const Fonte=(()=>{
    const rows=[];
    for(const line of sheet.matchAll(rowPattern)){
     const cells=parseCells(line[1],strings);
-    if(!found){if(kind==='cycle'){
+    if(!found){if(kind==='trucks'){
+     const names=cells.map(key);layout=['id da frota','operador'].map(k=>names.indexOf(k));found=layout.every(i=>i>=0);
+    }else if(kind==='cycle'){
      const names=cells.map(key);layout=cycleHeader.map(k=>names.indexOf(k));
      found=layout.every(i=>i>=0);dest=names.indexOf('destino');
      layout.push(names.indexOf('modal',layout[7]+1));
     }else found=header(kind,cells);if(!found&&++scan>=25)break;continue;}
     if(!cells.some(v=>v!=null&&v!==''))continue;
+    if(kind==='trucks'){
+     const [prefix,operator]=layout.map(i=>val(cells[i]));
+     if(prefix && (operator||prefix.toUpperCase().startsWith('TLD')))rows.push([prefix,prefix.toUpperCase().startsWith('TLD')?'TLD':operator]);
+     continue;
+    }
     const row=project(kind,layout?layout.map(i=>cells[i]):cells,mac);
     if(row&&dest>=0)row.push(val(cells[dest]));
     if(row)rows.push(row);else skipped++;
    }
    if(found){
+    if(kind==='trucks'){if(!rows.length)throw Error('Nenhum caminhão válido.');return rows;}
     if(!rows.length||(kind==='cycle'&&!rows.some(r=>r[1])))throw new Error('A aba de dados não tem registros elegíveis para este painel.');
     return make(kind,file.name,rows,skipped);
    }
   }
+  if(kind==='trucks')throw Error('Cabeçalhos esperados: Id da Frota e Operador.');
   throw new Error(kind==='fuel'?'Não encontrei os cabeçalhos da base de postos (Entrada Cerca, Entrada IONICS, Saída IONICS e Tempo Cerca).':
    'Não encontrei os cabeçalhos da base de ciclo (ID Viagem, Tempo Logístico e Tempo Decorrido).');
  }

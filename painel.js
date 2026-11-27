@@ -50,7 +50,7 @@ let charts=[],lastCaseRows=[];
 const controller=new AbortController();
 window.stopTorreDashboard=()=>controller.abort();
 const opt={signal:controller.signal};
-const nav=()=>location.hash.startsWith('#ciclo')?'ciclo':'postos';
+const nav=()=>location.hash.startsWith('#cadastro')?'cadastro':location.hash.startsWith('#ciclo')?'ciclo':'postos';
 const tabs=(values,current)=>`<div class="tabs" aria-label="Seções">${values.map(([k,l])=>`<button data-tab="${k}" aria-pressed="${current===k}">${l}</button>`).join('')}</div>`;
 const select=(key,label,v,opts)=>`<label>${label}<select data-change="${key}">${opts.map(([k,l])=>`<option value="${text(k)}"${String(k)===String(v)?' selected':''}>${text(l)}</option>`).join('')}</select></label>`;
 const kpis=rows=>`<div class="kpis">${rows.map(([label,v,note=''])=>`<div class="kpi"><span>${label}</span><strong>${v}</strong>${note?`<small>${note}</small>`:''}</div>`).join('')}</div>`;
@@ -302,7 +302,7 @@ function fuel(){
 
 const tripRows=data.cycle.trips;
 const groups={modal:'Modal',meso:'Mesorregião',bloco:'Bloco',grua:'Grua'};
-const tabsCycle=[['visao','Visão geral'],['rank','Modais e regiões'],['carga','Carregamento'],['campoDia','Carregamento analítico'],['campoSim','Simulação de tempos'],['descarga','Descarga'],['descDia','Descarga analítica'],['meta','Parâmetros'],['viagens','Conferência de viagens'],['importacao','Importação']];
+const tabsCycle=[['visao','Visão geral'],['carga','Carregamento'],['campoDia','Carregamento analítico'],['campoSim','Simulação de tempos'],['descarga','Descarga'],['descDia','Descarga analítica'],['meta','Parâmetros'],['viagens','Conferência de viagens'],['importacao','Importação']];
 const options=(rows,index,all)=>[['',all],...[...new Set(rows.map(r=>r[index]))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(x=>[x,x])];
 function tripFilter(){
  return tripRows.filter(r=> (state.cycleTab==='descDia'?r[23]?.slice(0,10)===state.campoDia:state.cycleTab==='campoDia'?r[18]?.slice(0,10)===state.campoDia:r[0]>=state.inicio&&r[0]<=state.fim)
@@ -332,8 +332,39 @@ function cycleOverview(rows){
   
   table(['Data','Viagens','Completos válidos','Incompletos','Vazio min','Carga min','Carregado min','Descarga min','Total min','P90 min'],lines));
  const rankRows=cycleRankData(rows,'modal').filter(r=>r.m!=null).slice(0,6);
- return fieldHistory(rows,"cycle")+summary+panel('Tempo logístico por etapa','Todos os valores abaixo usam a mesma amostra de ciclos completos.',stepHtml)+chartPanel+
- panel('Modais com maior tempo médio','Ranking de ciclos completos. O volume por modal está na seção Modais e regiões.',rankBars(rankRows,'m'));
+ return summary+fieldHistory(rows,"cycle")+panel('Tempo logístico por etapa','Todos os valores abaixo usam a mesma amostra de ciclos completos.',stepHtml)+chartPanel+
+ panel('Modais com maior tempo médio','Médias por etapa dos ciclos completos.',cycleBars(rankRows))+operatorCycle(rows)+cycleRanking(rows);
+}
+let fleet=null,fleetError='';
+const normalizeFleet=id=>String(id??'').trim().toUpperCase().replace(/[\s-]/g,'');
+function cycleBars(ranking){
+ const max=Math.max(1,...ranking.map(r=>r.m));
+ return legend(stage.map((label,i)=>[stageColors[i],label]))+ranking.map(r=>
+  `<div class="rank-row"><span>${text(r.label)}</span><span style="display:flex;height:16px">${r.stages.map((v,i)=>`<i title="${stage[i]} · ${min(v)}" style="width:${100*v/max}%;background:${stageColors[i]}"></i>`).join('')}</span><b>${min(r.m)}</b></div>`).join('');
+}
+function operatorCycle(rows){
+ const operators=new Map((fleet?.grid||[]).map(([id,name])=>[normalizeFleet(id),name]));
+ const ranking=[...group(rows.filter(validTrip),r=>operators.get(normalizeFleet(r[7]))??'Sem vínculo no cadastro')]
+  .map(([label,list])=>({label,...tripStats(list)})).sort((a,b)=>b.m-a.m);
+ return panel('Tempo de ciclo por operador','Médias de ciclos completos. A barra mostra as quatro etapas.',cycleBars(ranking));
+}
+function trucks(){
+ return heading('Caminhões','Cadastro de operadores por prefixo','')+panel('Importar Cadastro MAXTRACK','Colunas usadas: Id da Frota e Operador. Cada importação substitui o cadastro anterior.',
+  `<input type="file" accept=".xlsx,.xlsm" data-truck-file aria-label="Importar cadastro" ${fleet?'':'disabled'}><p role="status" id="fleet-status">${text(fleetError||(fleet?f(fleet.grid.length,0)+' prefixos cadastrados.':'Carregando cadastro…'))}</p>`+
+  table(['Id da Frota','Operador'],(fleet?.grid||[]).map(r=>r.map(text))));
+}
+async function importTrucks(input){
+ const file=input.files[0],status=document.getElementById('fleet-status');
+ if(!file)return;
+ input.disabled=true;
+ try{
+  const records=await Fonte.spreadsheet('trucks',file),unique=new Map();
+  for(const row of records){const key=normalizeFleet(row[0]);if(key)unique.set(key,row);}
+  const grid=[...unique.values()].sort((a,b)=>a[0].localeCompare(b[0]));
+  const r=await fetch('/api/data/caminhoes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:fleet.revision,grid})});
+  const result=await r.json();if(!r.ok)throw Error(result.error);
+  fleet={revision:result.revision,grid};render();
+ }catch(e){status.textContent=e.message;input.disabled=false;input.value='';}
 }
 function cycleRankData(rows,k){
  return [...group(rows,r=>r[xCycle[k]])].map(([label,rs])=>({label,...tripStats(rs)})).sort((a,b)=>(b.m??-1)-(a.m??-1)||b.n-a.n);
@@ -407,9 +438,9 @@ async function saveGoal(button){
  }catch(e){msg.textContent=e.message;}finally{button.disabled=false;}
 }
 const fieldOrder=[15,14,16,17],fieldNames=['Fila crítica','Fila de carga','Carregamento','Amarração'];
-function combo(labels,columns,volumes,names,target=null){
+function combo(labels,columns,volumes,names,target=null,compact=false){
  if(!labels.length)return note('Sem registros no período.');
- const colors=[...stageColors,'#999'],w=Math.max(620,labels.length*47+100),base=193,top=26,left=54,right=w-53;
+ const colors=[...stageColors,'#999'],w=Math.max(compact?260:620,labels.length*47+100),base=193,top=26,left=54,right=w-53;
  const totals=columns.map(c=>c.reduce((a,b)=>a+(b||0),0)),upper=Math.max(1,target||0,...totals)*1.15,vol=Math.max(1,...volumes);
  const x=i=>left+(right-left)*(i+.5)/labels.length,y=n=>base-(base-top)*n/upper;
  const points=volumes.map((v,i)=>[x(i),base-(base-top)*v/vol]);
@@ -417,7 +448,7 @@ function combo(labels,columns,volumes,names,target=null){
  for(let i=0;i<=4;i++){const yy=base-(base-top)*i/4;svg+=`<path d="M${left} ${yy}H${right}" stroke="#e1e8e4"/><text x="26" y="${yy}">${f(upper*i/4,0)}</text><text x="${w-24}" y="${yy}">${f(vol*i/4,0)}</text>`;}
  columns.forEach((c,i)=>{let acc=0;const bw=Math.min(38,(right-left)/labels.length*.61);
   c.forEach((v,j)=>{const height=Math.max(0,v||0);acc+=height;svg+=`<rect x="${x(i)-bw/2}" y="${y(acc)}" width="${bw}" height="${base-y(height)}" fill="${colors[j]}"><title>${labels[i]} · ${names[j]} · ${min(v)}</title></rect>`;});
-  svg+=`<text x="${x(i)}" y="${y(acc)-5}">${f(totals[i])}</text><text x="${x(i)}" y="213">${labels[i]}</text>`;
+  svg+=`<text x="${x(i)}" y="${y(acc)-5}">${f(totals[i],0)}</text><text x="${x(i)}" y="213">${labels[i]}</text>`;
  });
  if(target!==null)svg+=`<path d="M${left} ${y(target)}H${right}" stroke="#ba3a36" stroke-dasharray="6 4"/>`;
  svg+=`<polyline points="${points.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#403c86" stroke-width="2"/>`+points.map(([xx,yy],i)=>`<circle cx="${xx}" cy="${yy}" r="3" fill="#403c86"><title>${volumes[i]} viagens</title></circle>`).join('');
@@ -428,13 +459,14 @@ function fieldHistory(rows,mode='field'){
  const valid=rows.filter(r=>cycle?validTrip(r):r[drop?13:11]!=null);
  const names=cycle?['Trajeto vazio','Carregamento total','Trajeto carregado','Descarga']:drop?['Descarga']:[...fieldNames,'Outros'];
  const title=cycle?'Tempo de ciclo':drop?'Tempo de descarga':'Tempo de campo';
- return [7,10].map(len=>{
+ const panels=[7,10].map(len=>{
   const buckets=[...group(valid,r=>r[0].slice(0,len))].sort(([a],[b])=>a.localeCompare(b));
   const columns=buckets.map(([,rs])=>{const keys=cycle?[10,11,12,13]:drop?[13]:fieldOrder;
    const values=keys.map(k=>sum(rs,k)/rs.length);
    if(!cycle&&!drop)values.push(sum(rs,11)/rs.length-values.reduce((a,b)=>a+b,0));return values;});
-  return panel(title+(len===7?' por mês':' por dia'),'Barras em minutos por viagem. Linha de volume no eixo direito.',combo(buckets.map(([d])=>len===7?d:iso(d)),columns,buckets.map(([,rs])=>rs.length),names,mode==='field'?goal:null));
+  return panel(title+(len===7?' por mês':' por dia'),'Barras em minutos por viagem. Linha de volume no eixo direito.',combo(buckets.map(([d])=>len===7?d:iso(d)),columns,buckets.map(([,rs])=>rs.length),names,mode==='field'?goal:null,len===7&&!drop));
  }).join('');
+ return drop?panels:'<div class="cycle-periods">'+panels+'</div>';
 }
 const hh=r=>Number(r[18].slice(11,13));
 function rankMean(rs,key,metric){
@@ -557,7 +589,7 @@ function loading(rows){
   const v=series(valid,j+14);
   return [l,f(v.length,0),valid.length?f(v.length/valid.length*100)+'%':'—',min(mean(v)),min(percentile(v,.90)),min(valid.length?sum(valid,j+14)/valid.length:null)];
  });
- return fieldHistory(rows)+kpis([['Tempo de campo médio',min(x.m),'Etapa 2 · todas as subetapas'],['Viagens com etapa válida',f(x.n,0)],['Mediana',min(x.p50)],['P90',min(x.p90)],['Fila + fila crítica',min(valid.length?(sum(valid,14)+sum(valid,15))/valid.length:null),'Por viagem com etapa 2 válida'],['Carregamento',min(valid.length?sum(valid,16)/valid.length:null),'Por viagem com etapa 2 válida']])+
+ return kpis([['Tempo de campo médio',min(x.m),'Etapa 2 · todas as subetapas'],['Viagens com etapa válida',f(x.n,0)],['Mediana',min(x.p50)],['P90',min(x.p90)],['Fila + fila crítica',min(valid.length?(sum(valid,14)+sum(valid,15))/valid.length:null),'Por viagem com etapa 2 válida'],['Carregamento',min(valid.length?sum(valid,16)/valid.length:null),'Por viagem com etapa 2 válida']])+fieldHistory(rows)+
  panel('O que compõe o tempo de campo','Fila de carga, fila crítica, carregamento e amarração vêm da coluna K.',
   table(['Subetapa','Viagens com status','% da etapa 2','Média quando registrada','P90 quando registrada','Contribuição à média da etapa'],s)+
   note('A contribuição divide o tempo do status por todas as viagens com etapa 2 válida. As quatro contribuições somam a média do tempo de campo.'))+
@@ -597,7 +629,7 @@ function cycle(){
  if(state.cycleTab==='importacao')return heading('Ciclo florestal','Gerencie as planilhas do painel','Importação')+tabs(tabsCycle,'importacao')+Gerencia.html('cycle');
  if(!cycleMin)return heading('Ciclo florestal','Tempo logístico por viagem','Sem dados')+tabs(tabsCycle,state.cycleTab)+emptyDashboard('Nenhuma base de ciclo','Importe uma planilha para abrir os indicadores.');
  const rows=tripFilter(), audit=data.cycle.audit;
- const displays={visao:cycleOverview,rank:cycleRanking,carga:loading,campoDia:fieldDay,campoSim:fieldSim,descarga:discharge,descDia:dropDay,viagens:cycleCases};
+ const displays={visao:cycleOverview,carga:loading,campoDia:fieldDay,campoSim:fieldSim,descarga:discharge,descDia:dropDay,viagens:cycleCases};
  const date=(k,l)=>`<label>${l}<input type="date" data-change="${k}" value="${state[k]}" min="${cycleMin}" max="${cycleMax}"></label>`;
  const mesoRows=state.meso?tripRows.filter(r=>r[3]===state.meso):tripRows;
  const filteredRows=state.bloco?mesoRows.filter(r=>r[4]===state.bloco):mesoRows;
@@ -611,11 +643,11 @@ function cycle(){
 function render(focusSearch=false,caret=null){
  charts=[];
  const mode=nav();
- for(const key of ['postos','ciclo']){
+ for(const key of ['postos','ciclo','cadastro']){
   const a=document.getElementById('nav-'+key);
   if(key===mode)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
  }
- main.innerHTML=mode==='ciclo'?cycle():fuel();
+ main.innerHTML=mode==='cadastro'?trucks():mode==='ciclo'?cycle():fuel();
  if(focusSearch){
   const input=main.querySelector('[data-search]');
   if(input){input.focus();if(caret!=null)input.setSelectionRange(caret,caret);}
@@ -655,6 +687,7 @@ main.addEventListener('click',e=>{
  }else if(d.export){downloadCases(d.export);}
 },opt);
 main.addEventListener('change',e=>{
+ if(e.target.hasAttribute('data-truck-file')){importTrucks(e.target);return;}
  if(e.target.dataset.sourceKind){Gerencia.add(e.target,atualizarTorre);return;}
  const k=e.target.dataset.change;
  if(k==="campoDia")selectedCrane="";
@@ -690,6 +723,11 @@ if(typeof fetch==='function' && location.protocol!=='file:')fetch('/api/data/met
  if(!r.ok)return;
  const parameter=await r.json();goal=parameter.grid;goalRevision=parameter.revision;if(nav()==='ciclo')render();
 }).catch(()=>{});
+if(typeof fetch==='function'&&location.protocol!=='file:')fetch('/api/data/caminhoes',{cache:'no-store',signal:controller.signal}).then(async r=>{
+ if(!r.ok)throw Error('Cadastro indisponível.');
+ fleet=await r.json();
+ if(nav()==='cadastro'||nav()==='ciclo'&&state.cycleTab==='visao')render();
+}).catch(e=>{fleetError=e.message;if(nav()==='cadastro')render();});
 window.addEventListener('resize',()=>requestAnimationFrame(redraw),{passive:true,...opt});
 render();
 }

@@ -43,3 +43,7 @@ th button.sort{background:transparent;border:0;padding:0;min-height:0;line-heigh
 
 .logistica summary{padding:12px 0;font-weight:700;cursor:pointer}.vol-num{color:#234d69;font-weight:bold;display:block;text-align:center}.column-item:has(.vol-num){height:auto}
 @media print{@page{size:A4 landscape;margin:10mm}.rail,.tabs,.filters,.sources,.pagination{display:none!important}.layout,main{display:block!important;width:100%!important;margin:0!important;padding:0!important}.panel{break-inside:avoid}.tablewrap,.plot-scroll{overflow:visible!important}.heat{font-size:8pt;min-width:0!important}.heat td,.heat th{padding:2px!important}*{print-color-adjust:exact}}
+
+.cycle-periods{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,7fr);gap:14px}
+.cycle-periods>.panel{min-width:0}
+@media(max-width:800px){.cycle-periods{grid-template-columns:1fr}}

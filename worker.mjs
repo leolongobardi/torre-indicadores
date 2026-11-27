@@ -144,9 +144,27 @@ async function fieldGoal(request,db){
  return result.meta.changes?json({revision:revision+1}):fail('Os parâmetros mudaram em outro aparelho. Recarregue a página.',409);
 }
 
+async function truckRegistry(request,db){
+ await db.prepare('CREATE TABLE IF NOT EXISTS truck_registry (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, grid TEXT NOT NULL)').run();
+ if(request.method==='GET'){
+  const row=await db.prepare('SELECT revision,grid FROM truck_registry WHERE id=1').first();
+  return json(row?{revision:row.revision,grid:JSON.parse(row.grid)}:{revision:0,grid:[]});
+ }
+ if(request.method!=='PUT')return fail('Método inválido.',405);
+ if(request.headers.get('Origin')!==new URL(request.url).origin)return fail('Origem inválida.',403);
+ if(!request.headers.get('Content-Type')?.startsWith('application/json') || Number(request.headers.get('Content-Length')||Infinity)>500000)return fail('Formato inválido.',400);
+ const {revision,grid}=await request.json().catch(()=>({}));
+ if(!Number.isSafeInteger(revision)||revision<0||!Array.isArray(grid)||grid.length>10000||!grid.every(r=>Array.isArray(r)&&r.length===2&&r.every(v=>typeof v==='string'&&textCell(v)&&v.trim())))return fail('Cadastro inválido.',400);
+ const stmt=revision===0?db.prepare('INSERT OR IGNORE INTO truck_registry VALUES(1,1,?)').bind(JSON.stringify(grid)):
+ db.prepare('UPDATE truck_registry SET grid=?,revision=revision+1 WHERE id=1 AND revision=?').bind(JSON.stringify(grid),revision);
+ const result=await stmt.run();
+ return result.meta.changes?json({revision:revision+1}):fail('Os parâmetros mudaram em outro aparelho. Recarregue a página.',409);
+}
+
 async function api(request,env,path){
  if(path==='/api/data/versao' && request.method==='GET')return json({importacaoPublica:true,formatos:['xlsx','xlsm'],validacao:'estrutura'});
  if(!env.DB)return fail('Banco de dados do Torre Indicadores indisponível.',503);
+ if(path==='/api/data/caminhoes')return truckRegistry(request,env.DB);
  if(path==='/api/data/meta-campo')return fieldGoal(request,env.DB);
  if(path==='/api/data/capacidade')return capacity(request,env.DB);
  if(path==='/api/data'&&request.method==='GET'){
