@@ -506,9 +506,9 @@ function fieldDay(rows){
   const blocks=[...new Set(r.list.map(v=>v[4]))].sort();
   return '<strong>'+text(r.name)+'</strong> · '+hoursLost(r.loss)+' em '+f(r.list.length,0)+' registros · Blocos: '+blocks.map(text).join(', ')+'.';
  };
- const highlight=panel('Destaques do dia',iso(state.campoDia),
+ const highlight=panel('Destaques do dia - '+iso(state.campoDia),'',
   '<p>Maior saldo de horas perdidas por grua: '+worst(cranes[0])+'</p><p>Maior saldo de horas perdidas por mesorregião: '+worst(mesos[0])+'</p><p>Pico de chegadas: '+
-  (peak?'<strong>'+f(peak[1].length,0)+' registros</strong> às '+hour(p[0])+' · '+text(p[1])+' · '+text(p[2])+'.':'Sem chegadas.')+'</p>');
+  (peak?'<strong>'+f(peak[1].length,0)+' registros</strong> às '+hour(p[0])+' · '+text(p[1])+' · '+text(p[2])+'.':'Sem chegadas.')+'</p>').replace('class="panel"','class="panel field-highlights"');
  const hourly=slots.map(h=>mean(series(valid.filter(r=>hh(r)===h),11)));
 
  const counts=[...group(rows,r=>r[5])].map(([name,list])=>{
@@ -516,7 +516,7 @@ function fieldDay(rows){
  }).sort(([a,,na],[b,,nb])=>nb-na||a.localeCompare(b));
  const peakCount=Math.max(1,...counts.flatMap(r=>r[1]));
  const heat=table(['Grua',...slots.map(hour),'Total'],counts.map(([name,bins,total])=>[
-  `<button data-agenda="${text(name)}">${text(name)}</button>`,...bins.map(v=>{
+  `<button class="field-agenda-link" data-agenda="${text(name)}">${text(name)}</button>`,...bins.map(v=>{
    const [bg,fg]=heatColor(v,peakCount);
    return `<span style="display:block;background:${bg};color:${fg};padding:4px">${f(v,0)}</span>`;
   }),'<strong>'+f(total,0)+'</strong>']),'field-arrivals');
@@ -525,20 +525,20 @@ function fieldDay(rows){
  const codes=[...new Set(dots.map(family))].sort();
  const colors=new Map(codes.map((code,i)=>[code,`hsl(${Math.round(i*137.508)%360} 65% 36%)` ]));
  const ranking='<div class="tablewrap"><table><thead><tr>'+['Grua','Registros','Horas perdidas','Tempo total','Fila crítica','Fila de carga','Carregamento','Amarração'].map(n=>'<th>'+n+'</th>').join('')+'</tr></thead><tbody>'+cranes.map(c=>`<tr style="background:${shade(c.avg)}"><td>${text(c.name)}</td><td>${f(c.list.length,0)}</td><td>${hoursLost(c.loss)}</td><td>${min(c.avg)}</td>${fieldOrder.map(k=>'<td>'+min(sum(c.list,k)/c.list.length)+'</td>').join('')}</tr>`).join('')+'</tbody></table></div>';
- return '<div class="field-report"><p class="field-print-context">'+text([state.campoDia.split('-').reverse().join('/'),state.modal,state.meso,state.bloco,state.grua,'Outliers: '+state.outliers].filter(Boolean).join(' · '))+'</p>'+highlight+kpis([['Nº de registros',f(rows.length,0)],['Nº de registros fora da meta',f(valid.filter(r=>r[11]>goal).length,0),'Acima de '+min(goal)],['Nº de registros acima de 90 min',f(valid.filter(r=>r[11]>90).length,0)],['Tempo de campo médio',min(mean(series(valid,11)))]])+
- panel('Tempo de campo por hora de chegada','Média total da etapa 2 em minutos. Clique na grua para abrir a agenda.','<div class="plot-scroll"><div style="min-width:920px">'+hourlyPlot(hourly)+'</div></div>')+
- panel('Chegadas por hora e grua','A intensidade da cor indica o volume.',heat)+
+ return '<div class="field-report"><p class="field-print-context">'+text([state.campoDia.split('-').reverse().join('/'),state.modal,state.meso,state.bloco,state.grua,'Outliers: '+state.outliers].filter(Boolean).join(' · '))+'</p>'+highlight+kpis([['Nº de registros',f(rows.length,0)],['Nº registros &gt; meta',f(valid.filter(r=>r[11]>goal).length,0),'Meta de '+min(goal)],['Nº registros &gt; 90m',f(valid.filter(r=>r[11]>90).length,0)],['Tempo de campo (med)',min(mean(series(valid,11)))]])+
+ panel('Tempo de campo por hora de chegada','','<div class="plot-scroll"><div style="min-width:920px">'+hourlyPlot(hourly)+'</div></div>')+
+ panel('Chegadas por hora e grua','',heat)+
  '<div class="field-pair">'+
- panel('Dispersão · hora × tempo de campo','Cada ponto mostra o tempo total de campo de uma viagem. A média diária está nos cartões.',legend(codes.map(code=>[colors.get(code),text(code)]))+chart('Hora de chegada e minutos de campo',el=>plot(el,Math.max(1,...dots.map(r=>r[11]))*1.06,[0,6,12,18,24].map(h=>[h/24,h+'h']),(c,X,Y)=>{c.globalAlpha=.65;for(const r of dots){c.fillStyle=colors.get(family(r));c.beginPath();c.arc(X((hh(r)+Number(r[18].slice(14,16))/60)/24),Y(r[11]),2.5,0,7);c.fill();}})))+
- panel('Composição do tempo do dia','Minutos por viagem com etapa válida.',bars(['Fila crít.','Fila carga','Carga','Amarração'],fieldOrder.map(k=>valid.length?sum(valid,k)/valid.length:null),navy,null,true))+'</div>'+
+ panel('Dispersão · hora × tempo de campo','',legend(codes.map(code=>[colors.get(code),text(code)]))+chart('Hora de chegada e minutos de campo',el=>plot(el,Math.max(1,...dots.map(r=>r[11]))*1.06,[0,6,12,18,24].map(h=>[h/24,h+'h']),(c,X,Y)=>{c.globalAlpha=.65;for(const r of dots){c.fillStyle=colors.get(family(r));c.beginPath();c.arc(X((hh(r)+Number(r[18].slice(14,16))/60)/24),Y(r[11]),2.5,0,7);c.fill();}})))+
+ panel('Composição do tempo do dia','',bars(['Fila crít.','Fila carga','Carga','Amarração'],fieldOrder.map(k=>valid.length?sum(valid,k)/valid.length:null),navy,null,true))+'</div>'+
  '<div class="field-pair">'+fieldOffenders('Top 5 ofensores por grua',cranes)+fieldOffenders('Top 5 ofensores por mesorregião',mesos)+'</div>'+
- panel('Gruas por tempo de campo','Saldo em horas = soma de (tempo de campo − meta por viagem). Valores negativos indicam tempo abaixo da meta. Vermelho indica média acima de '+min(goal)+'.',ranking)+'</div>';
+ panel('Gruas por tempo de campo','',ranking)+'</div>';
 }
 function fieldOffenders(title,ranking){
  const top=ranking.filter(r=>r.loss>0).slice(0,5);
  const max=Math.max(1,...top.map(r=>r.avg));
- return panel(title,'Ordem por horas perdidas. Barras em minutos médios de campo.',top.length?
-  '<div class="field-offenders">'+top.map(r=>`<div><strong>${text(r.name)}</strong><small>${f(r.loss)} h perdidas</small>
+ return panel(title,'',top.length?
+  '<div class="field-offenders">'+top.map(r=>`<div><strong>${text(r.name)}</strong><small> - ${f(r.loss)} h perdidas</small>
   <div class="field-offender-bar"><i style="width:${100*r.avg/max}%"></i><b>${min(r.avg)}</b></div></div>`).join('')+'</div>':
   note('Nenhum saldo positivo de horas perdidas no recorte.'));
 }
