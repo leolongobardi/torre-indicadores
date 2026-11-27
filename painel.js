@@ -635,11 +635,12 @@ function cycleCases(rows){
  const options=[['all','Todos'],['complete','Completos'],['partial','Incompletos'],['invalid','Tempos inválidos']];
  const valid={all:()=>true,complete:r=>r[9]===15,partial:r=>r[9]!==15,invalid:invalidStep};
  const filtered=rows.filter(r=>valid[state.quality](r)&&r.slice(1,8).join(' ').toLowerCase().includes(state.query.toLowerCase()));
- lastCaseRows=filtered.map(r=>[r[0],r[1],r[7],r[2],r[3],r[4],r[5],r[6],tripStatus(r),maskText(r),...r.slice(10,14).map(x=>f(x)),validTrip(r)?f(total(r)):'—',f(r[8])]);
+ const loadingMinutes=new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+ lastCaseRows=filtered.map(r=>[r[0],r[1],r[7],r[2],r[3],r[4],r[5],r[6],tripStatus(r),maskText(r),f(r[10]),r[16]==null?'—':loadingMinutes.format(r[16]),f(r[11]),f(r[12]),f(r[13]),validTrip(r)?f(total(r)):'—',f(r[8])]);
  const [view,pages]=pageRows(lastCaseRows,20);
- return panel('Viagens por ID','Uma linha por viagem. As etapas ausentes estão indicadas no campo Faltam.',
+ return panel('Viagens por ID','O carregamento efetivo soma os apontamentos do status Carregamento na etapa 2. O campo total inclui fila e amarração e entra no total do ciclo.',
   `<div class="tools">${select('quality','Situação',state.quality,options)}${caseSearch('ID, prefixo, grua ou bloco')}<button data-export="cycle">Exportar CSV</button></div>`+
-  kpis([['Viagens selecionadas',f(filtered.length,0)],['Completas',f(filtered.filter(r=>r[9]===15).length,0)],['Incompletas',f(filtered.filter(r=>r[9]!==15).length,0)],['Carregamento médio',min(mean(series(filtered,11))),'Etapa 2'],['Descarga média',min(mean(series(filtered,13))),'Etapa 4'],['Tempo total médio',min(mean(completeMinutes(filtered))),'Completas com tempo válido']])+table(['Data','ID da viagem','Prefixo','Modal','Mesorregião','Bloco','Grua','Talhão','Situação','Faltam','Vazio min','Carga min','Carregado min','Descarga min','Total min','Km'],view.map(r=>r.map(text)))+pages);
+  kpis([['Viagens selecionadas',f(filtered.length,0)],['Completas',f(filtered.filter(r=>r[9]===15).length,0)],['Incompletas',f(filtered.filter(r=>r[9]!==15).length,0)],['Carregamento médio',min(mean(series(filtered,16))),'Status Carregamento da etapa 2'],['Descarga média',min(mean(series(filtered,13))),'Etapa 4'],['Tempo total médio',min(mean(completeMinutes(filtered))),'Completas com tempo válido']])+table(['Data','ID da viagem','Prefixo','Modal','Mesorregião','Bloco','Grua','Talhão','Situação','Faltam','Vazio min','Carregamento efetivo (min)','Campo total (min)','Carregado min','Descarga min','Total min','Km'],view.map(r=>r.map(text)))+pages);
 }
 function cycle(){
  if(state.cycleTab==='meta')return heading('Ciclo florestal','Parâmetros','')+tabs(tabsCycle,'meta')+goalEditor();
@@ -728,7 +729,7 @@ main.addEventListener('input',e=>{
 },opt);
 function downloadCases(mode){
  const labels=mode==='fuel'?['Data','Entrada','Posto','Transportadora','Prefixo','Fila_min','IDs_origem']:
- ['Data','ID','Prefixo','Modal','Mesorregiao','Bloco','Grua','Talhao','Situacao','Etapas_ausentes','Vazio_min','Carga_min','Carregado_min','Descarga_min','Total_min','Km'];
+ ['Data','ID','Prefixo','Modal','Mesorregiao','Bloco','Grua','Talhao','Situacao','Etapas_ausentes','Vazio_min','Carregamento_efetivo_min','Campo_total_min','Carregado_min','Descarga_min','Total_min','Km'];
  const val=v=>{const s=String(v??'');return '"'+(/^[=+@-]/.test(s)?"'":'')+s.replace(/"/g,'""')+'"';};
  const rows=[labels,...lastCaseRows].map(r=>r.map(val).join(';')).join('\r\n');
  const link=document.createElement('a'),url=URL.createObjectURL(new Blob(['\ufeff'+rows],{type:'text/csv;charset=utf-8'}));
