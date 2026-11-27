@@ -22,7 +22,7 @@ function validRow(r,kind) {
  if (kind === 'fuel') return r.length === 11 && !!r[1] && [1,3,4].every(i=>textCell(r[i])) &&
   [0,1].includes(r[2]) && [0,1].includes(r[5]) && timestamp(r[6]) &&
   [7,8,9].every(i=>r[i]===null || timestamp(r[i])) && Number.isFinite(r[10]) && r[10]>=0;
- return r.length===15 && [1,2,3,4,5,6,7,10,14].every(i=>textCell(r[i])) &&
+ return (r.length===15 || (r.length===16 && textCell(r[15]))) && [1,2,3,4,5,6,7,10,14].every(i=>textCell(r[i])) &&
   [8,9,13].every(i=>numberCell(r[i])) && [11,12].every(i=>r[i]===null || timestamp(r[i]));
 }
 async function validReport(content,source,id) {
@@ -127,9 +127,27 @@ async function capacity(request,db){
  return result.meta.changes?json({revision:revision+1}):fail('Os parâmetros mudaram em outro aparelho. Recarregue a página.',409);
 }
 
+async function fieldGoal(request,db){
+ await db.prepare('CREATE TABLE IF NOT EXISTS field_goal (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, grid TEXT NOT NULL)').run();
+ if(request.method==='GET'){
+  const row=await db.prepare('SELECT revision,grid FROM field_goal WHERE id=1').first();
+  return json(row?{revision:row.revision,grid:JSON.parse(row.grid)}:{revision:0,grid:69});
+ }
+ if(request.method!=='PUT')return fail('Método inválido.',405);
+ if(request.headers.get('Origin')!==new URL(request.url).origin)return fail('Origem inválida.',403);
+ if(!request.headers.get('Content-Type')?.startsWith('application/json') || Number(request.headers.get('Content-Length')||Infinity)>12000)return fail('Formato inválido.',400);
+ const {revision,grid}=await request.json().catch(()=>({}));
+ if(!Number.isSafeInteger(revision)||revision<0||!Number.isFinite(grid)||grid<=0||grid>1440)return fail('Capacidade inválida.',400);
+ const stmt=revision===0?db.prepare('INSERT OR IGNORE INTO field_goal VALUES(1,1,?)').bind(JSON.stringify(grid)):
+ db.prepare('UPDATE field_goal SET grid=?,revision=revision+1 WHERE id=1 AND revision=?').bind(JSON.stringify(grid),revision);
+ const result=await stmt.run();
+ return result.meta.changes?json({revision:revision+1}):fail('Os parâmetros mudaram em outro aparelho. Recarregue a página.',409);
+}
+
 async function api(request,env,path){
  if(path==='/api/data/versao' && request.method==='GET')return json({importacaoPublica:true,formatos:['xlsx','xlsm'],validacao:'estrutura'});
  if(!env.DB)return fail('Banco de dados do Torre Indicadores indisponível.',503);
+ if(path==='/api/data/meta-campo')return fieldGoal(request,env.DB);
  if(path==='/api/data/capacidade')return capacity(request,env.DB);
  if(path==='/api/data'&&request.method==='GET'){
   const [h,s]=await env.DB.batch([

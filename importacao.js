@@ -78,13 +78,18 @@ const Fonte=(()=>{
   for(const name of Object.keys(zip.files).filter(k=>/^xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort()){
    const sheet=await zip.file(name).async('string');
    const rowPattern=/<(?:[\w.-]+:)?row(?=\s|>)[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?row>/g;
-   let found=false, scan=0, skipped=0;
+   let layout=null,dest=-1,found=false, scan=0, skipped=0;
    const rows=[];
    for(const line of sheet.matchAll(rowPattern)){
     const cells=parseCells(line[1],strings);
-    if(!found){found=header(kind,cells);if(!found&&++scan>=25)break;continue;}
+    if(!found){if(kind==='cycle'){
+     const names=cells.map(key);layout=cycleHeader.map(k=>names.indexOf(k));
+     found=layout.every(i=>i>=0);dest=names.indexOf('destino');
+     layout.push(names.indexOf('modal',layout[7]+1));
+    }else found=header(kind,cells);if(!found&&++scan>=25)break;continue;}
     if(!cells.some(v=>v!=null&&v!==''))continue;
-    const row=project(kind,cells,mac);
+    const row=project(kind,layout?layout.map(i=>cells[i]):cells,mac);
+    if(row&&dest>=0)row.push(val(cells[dest]));
     if(row)rows.push(row);else skipped++;
    }
    if(found){
@@ -178,7 +183,9 @@ const Fonte=(()=>{
     })]:[null,null,null,null,null];
    const kept=field.filter(({part,minutes:m})=>m==null||part<0||m>=0&&(part===1?m<120:m<=[240,120,60,60][part]));
    trips.push([(sets[0][0]??a[0])[0],id,by(7,by(14,'Sem modal')),by(3,'Sem mesorregião'),by(2,'Sem bloco'),crane,by(4,'Sem talhão'),by(6,'Sem prefixo'),
-    distance.length?round(distance.reduce((x,y)=>x+y,0),3):null,mask,...steps,...sub,first,aggregate(field),aggregate(kept)]);
+    distance.length?round(distance.reduce((x,y)=>x+y,0),3):null,mask,...steps,...sub,first,aggregate(field),aggregate(kept),
+    list.filter(r=>key(r[10])==='carregamento').map(r=>[r[11],r[12],r[5]||crane,r[6]||by(6,'Sem prefixo')]),
+    sets[3].find(r=>has(r[15]))?.[15]??by(15,'Sem destino informado'),sets[3].find(r=>r[11])?.[11]??null]);
   }
   return {trips:trips.sort((a,b)=>a[0].localeCompare(b[0])||a[1].localeCompare(b[1])),audit:{rows,noId,invalidMinutes,unmapped}};
  }
