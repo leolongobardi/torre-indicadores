@@ -49,7 +49,12 @@ th button.sort{background:transparent;border:0;padding:0;min-height:0;line-heigh
 @media(max-width:800px){.cycle-periods{grid-template-columns:1fr}}
 
 .field-print-context{display:none}
+@page campo-executivo{size:A4 portrait;margin:8mm}
 @media print{
+ .field-report{page:campo-executivo}
+ .field-report .field-arrivals{font-size:6pt;table-layout:fixed}
+ .field-report .field-arrivals th:first-child{width:13%}
+ .field-report .field-arrivals th:last-child{width:7%}
  main:has(.field-report)>:not(.field-report){display:none!important}
  .field-print-context{display:block;font-weight:600}
  .field-report:before{content:"Carregamento analítico · Resumo executivo";display:block;font-size:19pt;font-weight:700}
