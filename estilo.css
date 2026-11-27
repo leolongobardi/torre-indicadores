@@ -108,3 +108,10 @@ th button.sort{background:transparent;border:0;padding:0;min-height:0;line-heigh
  .field-highlights .phead{margin-bottom:1pt}
  .field-highlights p{margin:1pt 0}
 }
+
+.rail .logistica summary{color:#e1f9ee;font-weight:750}
+.rail-toggle{align-self:flex-end;background:#285344;color:#fff;border:1px solid #78aa94;border-radius:6px;padding:1px 9px}
+.rail-minimized{grid-template-columns:49px minmax(0,1fr)}
+.rail-minimized .rail{padding-inline:6px}
+.rail-minimized .rail>:not(.rail-toggle){display:none}
+@media(max-width:680px){.layout.rail-minimized{display:grid}.rail-minimized .rail{min-height:100vh}}

@@ -186,9 +186,9 @@ const Fonte=(()=>{
    const first=list.find(r=>r[11])?.[11]??null;
    const field=list.map(r=>({part:statuses.indexOf(key(r[10])),minutes:r[13]}));
    const aggregate=events=>events.length&&events.every(e=>e.minutes!=null)?
-    [events.reduce((v,e)=>v+e.minutes,0),...statuses.map((_,i)=>{
+    [round(events.reduce((v,e)=>v+e.minutes,0),4),...statuses.map((_,i)=>{
      const hits=events.filter(e=>e.part===i);
-     return hits.length?hits.reduce((v,e)=>v+e.minutes,0):null;
+     return hits.length?round(hits.reduce((v,e)=>v+e.minutes,0),4):null;
     })]:[null,null,null,null,null];
    const kept=field.filter(({part,minutes:m})=>m==null||part<0||m>=0&&(part===1?m<120:m<=[240,120,60,60][part]));
    trips.push([(sets[0][0]??a[0])[0],id,by(7,by(14,'Sem modal')),by(3,'Sem mesorregião'),by(2,'Sem bloco'),crane,by(4,'Sem talhão'),by(6,'Sem prefixo'),

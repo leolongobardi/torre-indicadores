@@ -90,6 +90,14 @@ test('D1 importa novos conteúdos com qualquer nome e protege o catálogo',async
  assert.equal(stored.content,workerSeeds[0].content);
  const mutate=(method,id,body)=>send('/'+id,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  assert.equal((await mutate('DELETE',seed.id,{revision:1})).status,403);
+ const visibility=(suffix,method,revision)=>send('/'+seed.id+suffix,{method,headers:{Origin:'https://torre.example','Content-Type':'application/json'},body:JSON.stringify({revision})});
+ assert.equal((await visibility('','DELETE',1)).status,200);
+ const archived=await (await send()).json();
+ assert.equal(archived.sources.length,2);
+ assert.equal(archived.archived[0].id,seed.id);
+ assert.equal((await visibility('/restaurar','POST',1)).status,409);
+ assert.equal((await visibility('/restaurar','POST',2)).status,200);
+ assert.equal((await (await send()).json()).sources.length,3);
  for(const [kind,row] of [
   ['fuel',['2026-12-01','id',0,'T','P',1,'2026-12-01T01:30:00',null,null,null,9]],
   ['cycle',['2026-12-01','viagem','B','M',null,null,'P','Modal',10,1,'Carga',null,null,10,null]]

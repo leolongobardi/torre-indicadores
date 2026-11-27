@@ -161,22 +161,40 @@ async function truckRegistry(request,db){
  return result.meta.changes?json({revision:revision+1}):fail('Os parâmetros mudaram em outro aparelho. Recarregue a página.',409);
 }
 
+async function sourceVisibility(request,db,id,archiving){
+ if(request.headers.get('Origin')!==new URL(request.url).origin)return fail('Origem inválida.',403);
+ const {revision}=await request.json().catch(()=>({}));
+ if(!Number.isSafeInteger(revision)||revision<0)return fail('Revisão inválida.',400);
+ const stamp=crypto.randomUUID();
+ const condition=archiving?'NOT EXISTS':'EXISTS';
+ const gate=db.prepare('UPDATE catalogue SET revision=revision+1,stamp=? WHERE singleton=1 AND revision=? AND EXISTS (SELECT 1 FROM sources WHERE id=?) AND '+condition+' (SELECT 1 FROM source_archive WHERE id=?)').bind(stamp,revision,id,id);
+ const change=archiving?
+  db.prepare('INSERT INTO source_archive (id) SELECT ? WHERE '+commitCondition).bind(id,stamp):
+  db.prepare('DELETE FROM source_archive WHERE id=? AND '+commitCondition).bind(id,stamp);
+ const [result]=await db.batch([gate,change]);
+ return result.meta.changes?json({revision:revision+1}):fail('A base ou a revisão mudou. Atualize a página.',409);
+}
+
 async function api(request,env,path){
  if(path==='/api/data/versao' && request.method==='GET')return json({importacaoPublica:true,formatos:['xlsx','xlsm'],validacao:'estrutura'});
  if(!env.DB)return fail('Banco de dados do Torre Indicadores indisponível.',503);
  if(path==='/api/data/caminhoes')return truckRegistry(request,env.DB);
  if(path==='/api/data/meta-campo')return fieldGoal(request,env.DB);
  if(path==='/api/data/capacidade')return capacity(request,env.DB);
+ if(request.method==='DELETE'&&request.headers.get('Origin')!==new URL(request.url).origin)return fail('Origem inválida.',403);
+ if(path==='/api/data'||request.method==='DELETE'||path.endsWith('/restaurar'))await env.DB.prepare('CREATE TABLE IF NOT EXISTS source_archive (id TEXT PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE)').run();
  if(path==='/api/data'&&request.method==='GET'){
   const [h,s]=await env.DB.batch([
    env.DB.prepare('SELECT revision FROM catalogue WHERE singleton=1'),
-   env.DB.prepare('SELECT '+headers+' FROM sources ORDER BY imported_at, rowid')]);
-  return json({revision:h.results[0].revision,sources:s.results});
+   env.DB.prepare('SELECT '+headers+', EXISTS (SELECT 1 FROM source_archive WHERE source_archive.id=sources.id) AS archived FROM sources ORDER BY imported_at, rowid')]);
+  return json({revision:h.results[0].revision,sources:s.results.filter(row=>!row.archived),archived:s.results.filter(row=>row.archived)});
  }
- const id=path.slice('/api/data/'.length);
+ const restore=path.endsWith('/restaurar');
+ const id=path.slice('/api/data/'.length,restore?-'/restaurar'.length:undefined);
  if(!idPattern.test(id))return fail('Rota inválida.',404);
+ if(restore)return request.method==='POST'?sourceVisibility(request,env.DB,id,false):fail('Método inválido.',405);
  if(request.method==='PUT')return update(request,env.DB,id);
- if(request.method==='DELETE')return fail('O painel público está em modo de consulta. A edição de bases requer acesso administrativo.',403);
+ if(request.method==='DELETE')return sourceVisibility(request,env.DB,id,true);
  if(request.method==='GET'){
   const result=await env.DB.prepare('SELECT content FROM source_chunks WHERE source_id = ? ORDER BY seq').bind(id).all();
   return result.results.length?json({content:result.results.map(x=>x.content).join('')}):fail('Base não encontrada.',404);

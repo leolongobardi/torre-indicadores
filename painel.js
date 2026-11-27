@@ -484,13 +484,13 @@ function agenda(rows){
  const day=state.campoDia,origin=Date.parse(day+'T00:00:00Z');
  const offset=s=>(Date.parse(s+'Z')-origin)/3600000;
  const br=s=>s.slice(0,10).split('-').reverse().join('/')+' '+s.slice(11,19);
- const bars=entries.flatMap(r=>(r[21]||[]).filter(([s,e])=>s&&e&&e>=s).map(([s,e,,cm])=>({s,e,cm,arrival:r[18],id:r[1]})));
- const end=Math.max(24,...bars.map(v=>Math.ceil(offset(v.e))));
+ const bars=entries.flatMap(r=>(r[21]||[]).filter(([s,e])=>s&&e&&e>=s&&offset(s)<24&&offset(e)>0).map(([s,e,,cm])=>({s,e,cm,arrival:r[18],id:r[1]})));
+ const end=24;
  const axis='<div style="display:flex;justify-content:space-between;min-width:400px">'+Array.from({length:7},(_,i)=>'<span>'+f(end*i/6,0)+'h</span>').join('')+'</div>';
  const items=[...group(bars.sort((a,b)=>a.s.localeCompare(b.s)),b=>b.cm)];
  return panel('Agenda · '+text(selectedCrane),'Uma linha por prefixo. As faixas representam os intervalos reais de carregamento. Passe o cursor para ver início, fim e duração.',
  table(['Prefixo CM','Horas de chegada',axis],items.map(([cm,list])=>[text(cm),[...new Set(list.map(b=>b.arrival.slice(11,16)))].join(', '),
- `<div style="position:relative;min-width:400px;height:18px;background:#f1f5f2">${list.map(b=>`<i title="${text('Início: '+br(b.s)+' · Fim: '+br(b.e)+' · Tempo total: '+min((offset(b.e)-offset(b.s))*60))}" style="position:absolute;top:4px;height:10px;border-radius:5px;background:#28775f;left:${100*offset(b.s)/end}%;width:${100*(offset(b.e)-offset(b.s))/end}%"></i>`).join('')}</div>`])));
+ `<div style="position:relative;min-width:400px;height:18px;background:#f1f5f2">${list.map(b=>`<i title="${text('Início: '+br(b.s)+' · Fim: '+br(b.e)+' · Tempo total: '+min((offset(b.e)-offset(b.s))*60))}" style="position:absolute;top:4px;height:10px;border-radius:5px;background:#28775f;left:${100*Math.max(0,offset(b.s))/end}%;width:${100*(Math.min(24,offset(b.e))-Math.max(0,offset(b.s)))/end}%"></i>`).join('')}</div>`])));
 
 }
 function fieldDay(rows){
@@ -636,7 +636,7 @@ function cycleCases(rows){
  const valid={all:()=>true,complete:r=>r[9]===15,partial:r=>r[9]!==15,invalid:invalidStep};
  const filtered=rows.filter(r=>valid[state.quality](r)&&r.slice(1,8).join(' ').toLowerCase().includes(state.query.toLowerCase()));
  const loadingMinutes=new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
- lastCaseRows=filtered.map(r=>[r[0],r[1],r[7],r[2],r[3],r[4],r[5],r[6],tripStatus(r),maskText(r),f(r[10]),r[16]==null?'—':loadingMinutes.format(r[16]),f(r[11]),f(r[12]),f(r[13]),validTrip(r)?f(total(r)):'—',f(r[8])]);
+ lastCaseRows=filtered.map(r=>[r[0],r[1],r[7],r[2],r[3],r[4],r[5],r[6],tripStatus(r),maskText(r),f(r[10]),r[16]==null?'—':loadingMinutes.format(r[16]),r[11]==null?'—':loadingMinutes.format(r[11]),f(r[12]),f(r[13]),validTrip(r)?f(total(r)):'—',f(r[8])]);
  const [view,pages]=pageRows(lastCaseRows,20);
  return panel('Viagens por ID','O carregamento efetivo soma os apontamentos do status Carregamento na etapa 2. O campo total inclui fila e amarração e entra no total do ciclo.',
   `<div class="tools">${select('quality','Situação',state.quality,options)}${caseSearch('ID, prefixo, grua ou bloco')}<button data-export="cycle">Exportar CSV</button></div>`+
@@ -692,6 +692,7 @@ main.addEventListener('click',e=>{
    table(['Grua','Registros retirados','Mínimo','Máximo','Média'],groups.map(([name,list])=>[text(name),f(list.length,0),...fractionSummary(list)]))));return;
  }
  if(d.saveCap){saveCapacity(target);return;}
+ if(d.restoreSource){Repositorio.restore(d.restoreSource).then(atualizarTorre).catch(e=>alert(e.message));return;}
  if(d.removeSource){Gerencia.remove(d.removeSource,atualizarTorre);}
  else if(d.tab){
   const menu=nav();

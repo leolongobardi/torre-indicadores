@@ -71,13 +71,13 @@ const Repositorio=(()=>{
    const meta=await fetchJson('');
    try{
     const sources=[];
-    for(const src of meta.sources){
+    for(const src of meta.sources.filter(s=>!s.archived)){
      const record=await fetchJson('/'+src.id);
      const rows=await unpack(record.content);
      if(rows.length!==src.count)throw new Error('A base '+src.name+' não pôde ser validada.');
      sources.push({...src,rows});
     }
-    current={revision:meta.revision,sources};return;
+    current={revision:meta.revision,sources,archived:meta.archived||[]};return;
    }catch(e){if(i||e.status!==404)throw e;}
   }
  }
@@ -88,7 +88,7 @@ const Repositorio=(()=>{
     method,headers:{'Content-Type':'application/json'},
     body:JSON.stringify({revision:current.revision,...(method==='PUT'?{source:meta,content:await pack(meta.rows)}:{})},(k,v)=>k==='rows'?undefined:v)
    });
-   current={revision:result.revision,sources:next};
+   current={...current,revision:result.revision,sources:next};
   }else{
    if(!db)throw new Error('Abra o HTML baixado em um navegador com armazenamento local habilitado para importar ou excluir bases.');
    const expected=current.revision, draft={revision:expected+1,sources:next};
@@ -103,8 +103,13 @@ const Repositorio=(()=>{
   const source=current.sources.find(s=>s.id===id);
   if(!source)throw new Error('A base selecionada não está disponível.');
   await save(current.sources.filter(s=>s.id!==id),source,'DELETE');
+  if(hosted)current.archived=[...(current.archived||[]),source];
  }
- return {open,add,remove,hosted,get sources(){return current.sources.slice().sort(order);}};
+ async function restore(id){
+  await fetchJson('/'+id+'/restaurar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:current.revision})});
+  await remote();
+ }
+ return {open,add,remove,restore,hosted,get archived(){return current.archived||[];},get sources(){return current.sources.slice().sort(order);}};
 })();
 
 async function iniciarPainel(){

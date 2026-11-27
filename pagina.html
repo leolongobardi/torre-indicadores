@@ -10,6 +10,7 @@
 <body>
 <div class="layout">
  <aside class="rail">
+  <button type="button" class="rail-toggle" aria-label="Minimizar menu" aria-expanded="true" onclick="const reduced=this.closest('.layout').classList.toggle('rail-minimized');this.setAttribute('aria-expanded',!reduced);this.setAttribute('aria-label',reduced?'Expandir menu':'Minimizar menu');this.textContent=reduced?'»':'«'">«</button>
   <a class="brand" href="#postos" aria-label="Torre Indicadores, início"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Torre<strong>Indicadores</strong></span></a>
   <details class="logistica" open><summary>Logística</summary><nav aria-label="Logística"><a id="nav-postos" href="#postos"><span class="nav-icon">◫</span><span>Postos de combustível</span></a><a id="nav-ciclo" href="#ciclo"><span class="nav-icon">◎</span><span>Ciclo florestal</span></a></nav></details>
   <details class="logistica" open><summary>Cadastro</summary><nav><a id="nav-cadastro" href="#cadastro">Caminhões</a></nav></details>
