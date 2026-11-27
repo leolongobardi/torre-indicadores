@@ -495,35 +495,41 @@ function agenda(rows){
 }
 function fieldDay(rows){
  const valid=rows.filter(r=>r[11]!=null),slots=Array.from({length:24},(_,i)=>i);
- const cranes=rankMean(valid,5,11),mesos=rankMean(valid,3,11);
+ const rankLoss=key=>rankMean(valid,key,11).map(r=>({...r,loss:(sum(r.list,11)-goal*r.list.length)/60}))
+  .sort((a,b)=>b.loss-a.loss||a.name.localeCompare(b.name));
+ const cranes=rankLoss(5),mesos=rankLoss(3);
+ const hoursLost=v=>f(v)+' h';
  const peak=[...group(rows,r=>JSON.stringify([hh(r),r[5],r[3]]))].sort((a,b)=>b[1].length-a[1].length)[0];
  const p=peak&&JSON.parse(peak[0]);
  const worst=r=>{
   if(!r)return 'Sem registros.';
   const blocks=[...new Set(r.list.map(v=>v[4]))].sort();
-  return '<strong>'+text(r.name)+'</strong> · '+min(r.avg)+' em '+f(r.list.length,0)+' registros · Blocos: '+blocks.map(text).join(', ')+'.';
+  return '<strong>'+text(r.name)+'</strong> · '+hoursLost(r.loss)+' em '+f(r.list.length,0)+' registros · Blocos: '+blocks.map(text).join(', ')+'.';
  };
  const highlight=panel('Destaques do dia',iso(state.campoDia),
-  '<p>Maior tempo por grua: '+worst(cranes[0])+'</p><p>Maior tempo por mesorregião: '+worst(mesos[0])+'</p><p>Pico de chegadas: '+
+  '<p>Maior saldo de horas perdidas por grua: '+worst(cranes[0])+'</p><p>Maior saldo de horas perdidas por mesorregião: '+worst(mesos[0])+'</p><p>Pico de chegadas: '+
   (peak?'<strong>'+f(peak[1].length,0)+' registros</strong> às '+hour(p[0])+' · '+text(p[1])+' · '+text(p[2])+'.':'Sem chegadas.')+'</p>');
  const hourly=slots.map(h=>mean(series(valid.filter(r=>hh(r)===h),11)));
 
- const counts=[...group(rows,r=>r[5])].sort(([a],[b])=>a.localeCompare(b)).map(([name,list])=>{
-  const bins=Array(24).fill(0);for(const r of list)bins[hh(r)]++;return [name,bins];
- });
+ const counts=[...group(rows,r=>r[5])].map(([name,list])=>{
+  const bins=Array(24).fill(0);for(const r of list)bins[hh(r)]++;return [name,bins,list.length];
+ }).sort(([a,,na],[b,,nb])=>nb-na||a.localeCompare(b));
  const peakCount=Math.max(1,...counts.flatMap(r=>r[1]));
- const heat=table(['Grua',...slots.map(hour)],counts.map(([name,bins])=>[
+ const heat=table(['Grua',...slots.map(hour),'Total'],counts.map(([name,bins,total])=>[
   `<button data-agenda="${text(name)}">${text(name)}</button>`,...bins.map(v=>{
    const [bg,fg]=heatColor(v,peakCount);
    return `<span style="display:block;background:${bg};color:${fg};padding:4px">${f(v,0)}</span>`;
-  })]));
- const dots=rows.filter(r=>r[16]!=null);
- const ranking='<div class="tablewrap"><table><thead><tr>'+['Grua','Registros','Tempo total','Fila crítica','Fila de carga','Carregamento','Amarração'].map(n=>'<th>'+n+'</th>').join('')+'</tr></thead><tbody>'+cranes.map(c=>`<tr style="background:${shade(c.avg)}"><td>${text(c.name)}</td><td>${f(c.list.length,0)}</td><td>${min(c.avg)}</td>${fieldOrder.map(k=>'<td>'+min(sum(c.list,k)/c.list.length)+'</td>').join('')}</tr>`).join('')+'</tbody></table></div>';
- return highlight+kpis([['Chegadas',f(rows.length,0)],['Tempo de campo médio',min(mean(series(valid,11)))],['Meta de campo',min(goal)],['P90',min(percentile(series(valid,11),.9))]])+
+  }),'<strong>'+f(total,0)+'</strong>']),'field-arrivals');
+ const dots=valid;
+ const family=r=>r[5].match(/^[A-Z]+(?=[\s-]*\d)/i)?.[0].toUpperCase()??'Sem código';
+ const codes=[...new Set(dots.map(family))].sort();
+ const colors=new Map(codes.map((code,i)=>[code,`hsl(${Math.round(i*137.508)%360} 65% 36%)` ]));
+ const ranking='<div class="tablewrap"><table><thead><tr>'+['Grua','Registros','Horas perdidas','Tempo total','Fila crítica','Fila de carga','Carregamento','Amarração'].map(n=>'<th>'+n+'</th>').join('')+'</tr></thead><tbody>'+cranes.map(c=>`<tr style="background:${shade(c.avg)}"><td>${text(c.name)}</td><td>${f(c.list.length,0)}</td><td>${hoursLost(c.loss)}</td><td>${min(c.avg)}</td>${fieldOrder.map(k=>'<td>'+min(sum(c.list,k)/c.list.length)+'</td>').join('')}</tr>`).join('')+'</tbody></table></div>';
+ return '<div class="field-report"><p class="field-print-context">'+text([state.campoDia.split('-').reverse().join('/'),state.modal,state.meso,state.bloco,state.grua,'Outliers: '+state.outliers].filter(Boolean).join(' · '))+'</p>'+highlight+kpis([['Chegadas',f(rows.length,0)],['Tempo de campo médio',min(mean(series(valid,11)))],['Meta de campo',min(goal)],['P90',min(percentile(series(valid,11),.9))]])+
  panel('Tempo de campo por hora de chegada','Média total da etapa 2 em minutos. Clique na grua para abrir a agenda.','<div class="plot-scroll"><div style="min-width:920px">'+hourlyPlot(hourly)+'</div></div><h3>Chegadas por hora e grua</h3><p>Quantidade de registros por hora. A cor mais intensa indica o maior volume do dia.</p>'+heat)+
- panel('Dispersão · hora × tempo de carregamento','Cada ponto é uma viagem, pela hora de chegada ao campo e duração do status Carregamento.',chart('Hora de chegada e minutos de carregamento',el=>plot(el,Math.max(1,...dots.map(r=>r[16]))*1.06,[0,6,12,18,24].map(h=>[h/24,h+'h']),(c,X,Y)=>{c.fillStyle='#14755588';for(const r of dots){c.beginPath();c.arc(X((hh(r)+Number(r[18].slice(14,16))/60)/24),Y(r[16]),2.5,0,7);c.fill();}})))+
+ panel('Dispersão · hora × tempo de campo','Cada ponto mostra o tempo total de campo de uma viagem. A média diária está nos cartões.',legend(codes.map(code=>[colors.get(code),text(code)]))+chart('Hora de chegada e minutos de campo',el=>plot(el,Math.max(1,...dots.map(r=>r[11]))*1.06,[0,6,12,18,24].map(h=>[h/24,h+'h']),(c,X,Y)=>{c.globalAlpha=.65;for(const r of dots){c.fillStyle=colors.get(family(r));c.beginPath();c.arc(X((hh(r)+Number(r[18].slice(14,16))/60)/24),Y(r[11]),2.5,0,7);c.fill();}})))+
  panel('Composição do tempo do dia','Minutos por viagem com etapa válida.',bars(fieldNames,fieldOrder.map(k=>valid.length?sum(valid,k)/valid.length:null),navy,null,true))+
- panel('Gruas por tempo de campo','Da maior média para a menor. Vermelho indica tempo acima da meta de '+min(goal)+'.',ranking);
+ panel('Gruas por tempo de campo','Saldo em horas = soma de (tempo de campo − meta por viagem). Valores negativos indicam tempo abaixo da meta. Vermelho indica média acima de '+min(goal)+'.',ranking)+'</div>';
 }
 function hourlyPlot(values){
  return legend([[green,'Tempo médio de campo'],['#ba3a36','Meta '+min(goal)]])+chart('Campo médio por hora',el=>plot(el,Math.max(goal,...values)*1.1,[0,4,8,12,16,20,23].map(i=>[(i+.5)/24,hour(i)]),(c,X,Y,w)=>{
@@ -633,7 +639,7 @@ function cycle(){
  const date=(k,l)=>`<label>${l}<input type="date" data-change="${k}" value="${state[k]}" min="${cycleMin}" max="${cycleMax}"></label>`;
  const mesoRows=state.meso?tripRows.filter(r=>r[3]===state.meso):tripRows;
  const filteredRows=state.bloco?mesoRows.filter(r=>r[4]===state.bloco):mesoRows;
- const controls=`<div class="filters">${['campoDia','descDia'].includes(state.cycleTab)?dayInput('campoDia',state.campoDia):date('inicio','De')+date('fim','Até')}${select('outliers','Outliers da etapa 2',state.outliers,[['excluir','Excluir apontamentos'],['incluir','Incluir apontamentos']])}${select('modal','Modal',state.modal,options(tripRows,2,'Todos'))}${select('meso','Mesorregião',state.meso,options(tripRows,3,'Todas'))}${select('bloco','Bloco',state.bloco,options(mesoRows,4,'Todos'))}${select('grua','Grua',state.grua,options(filteredRows,5,'Todas'))}<button data-reset>Limpar filtros</button></div>`;
+ const controls=`<div class="filters">${['campoDia','descDia'].includes(state.cycleTab)?dayInput('campoDia',state.campoDia):date('inicio','De')+date('fim','Até')}${select('outliers','Outliers da etapa 2',state.outliers,[['excluir','Excluir apontamentos'],['incluir','Incluir apontamentos']])}${select('modal','Modal',state.modal,options(tripRows,2,'Todos'))}${select('meso','Mesorregião',state.meso,options(tripRows,3,'Todas'))}${select('bloco','Bloco',state.bloco,options(mesoRows,4,'Todos'))}${select('grua','Grua',state.grua,options(filteredRows,5,'Todas'))}<button data-reset>Limpar filtros</button>${state.cycleTab==='campoDia'?'<button data-print-report="1">Imprimir</button>':''}</div>`;
  const dates=`${iso(cycleMin)} a ${iso(cycleMax)}/${cycleMax.slice(0,4)}`;
  return heading('Ciclo florestal','Tempo logístico por viagem, etapa e frente de operação',dates)+controls+note('Filtro por apontamento da etapa 2: duração negativa em qualquer uma das quatro subetapas, fila crítica ≥ 120 min, fila > 240 min, carregamento ou amarração > 60 min. A exclusão preserva os demais eventos da viagem.')+tabs(tabsCycle,state.cycleTab)+displays[state.cycleTab](rows)+footer(
   'Fontes disponíveis na aba Importação de Ciclo.',
@@ -728,6 +734,8 @@ if(typeof fetch==='function'&&location.protocol!=='file:')fetch('/api/data/camin
  fleet=await r.json();
  if(nav()==='cadastro'||nav()==='ciclo'&&state.cycleTab==='visao')render();
 }).catch(e=>{fleetError=e.message;if(nav()==='cadastro')render();});
+window.addEventListener('beforeprint',redraw,opt);
+window.addEventListener('afterprint',redraw,opt);
 window.addEventListener('resize',()=>requestAnimationFrame(redraw),{passive:true,...opt});
 render();
 }
