@@ -42,7 +42,7 @@ th button.sort{background:transparent;border:0;padding:0;min-height:0;line-heigh
 #upload-status[data-error=true]{color:#8e372a}
 
 .logistica summary{padding:12px 0;font-weight:700;cursor:pointer}.vol-num{color:#234d69;font-weight:bold;display:block;text-align:center}.column-item:has(.vol-num){height:auto}
-@media print{@page{size:A4 landscape;margin:10mm}.rail,.tabs,.filters,.sources,.pagination{display:none!important}.layout,main{display:block!important;width:100%!important;margin:0!important;padding:0!important}.panel{break-inside:avoid}.tablewrap,.plot-scroll{overflow:visible!important}.heat{font-size:8pt;min-width:0!important}.heat td,.heat th{padding:2px!important}*{print-color-adjust:exact}}
+@media print{@page{size:A4 portrait;margin:10mm}.rail,.tabs,.filters,.sources,.pagination{display:none!important}.layout,main{display:block!important;width:100%!important;margin:0!important;padding:0!important}.panel{break-inside:avoid}.tablewrap,.plot-scroll{overflow:visible!important}.heat{font-size:8pt;min-width:0!important}.heat td,.heat th{padding:2px!important}*{print-color-adjust:exact}}
 
 .cycle-periods{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,7fr);gap:14px}
 .cycle-periods>.panel{min-width:0}
@@ -65,4 +65,33 @@ th button.sort{background:transparent;border:0;padding:0;min-height:0;line-heigh
  .field-report table{min-width:0!important;width:100%;font-size:8pt}
  .field-report .field-arrivals th,.field-report .field-arrivals td{padding:2px!important}
  .field-report .field-arrivals span,.field-report .field-arrivals button{font:inherit;padding:0!important}
+}
+
+.print-tab{display:none}
+.field-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.field-pair>.panel{min-width:0}
+.field-arrivals th,.field-arrivals td{padding:2px 3px;font-size:11px}
+.field-arrivals span,.field-arrivals button{padding:2px!important;font-size:inherit;line-height:1.2}
+.field-offenders>div+div{margin-top:8px}
+.field-offenders small{display:block;color:#42594f}
+.field-offender-bar{display:flex;align-items:center;gap:5px;font-size:12px}
+.field-offender-bar i{display:block;height:8px;background:#12805d;max-width:75%;border-radius:4px}
+.field-offender-bar b{white-space:nowrap}
+@media screen and (max-width:700px){.field-pair{grid-template-columns:1fr}}
+@media print{
+ .print-button,dialog{display:none!important}
+ .print-tab{display:block;position:absolute;top:0;right:0}
+ main{position:relative}
+ .panel,.field-report .panel{break-inside:auto;margin:0 0 7pt;padding:6pt;box-shadow:none}
+ .panel .phead{margin-bottom:4pt;break-after:avoid}
+ .panel h2{font-size:12pt}
+ .panel p{margin:3pt 0;font-size:8pt}
+ .field-report .kpis{break-inside:avoid}
+ .field-pair{gap:6pt;break-inside:avoid}
+ .field-report .field-arrivals th,.field-report .field-arrivals td{font-size:6pt}
+ table tr{break-inside:avoid}
+ .plot-scroll svg{min-width:0!important}
+ .cycle-periods{grid-template-columns:1fr}
+ .tablewrap table{min-width:0!important;width:100%;font-size:8pt}
+ .tablewrap th,.tablewrap td{padding:2px!important;overflow-wrap:anywhere}
 }
