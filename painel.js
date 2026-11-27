@@ -95,11 +95,11 @@ function plot(el,max,labels,paint){
  c.save();c.beginPath();c.rect(left-1,top-2,span+2,base-top+3);c.clip();paint(c,X,Y,span);c.restore();
 }
 function redraw(){for(const el of main.querySelectorAll('[data-chart]'))charts[Number(el.dataset.chart)](el);}
-function bars(labels,values,color,max=null){
+function bars(labels,values,color,max=null,showLabels=false){
  const count=labels.length;
  return chart('Gráfico de barras '+labels.join(', '),el=>plot(el,max||Math.max(1,...values)*1.15,labels.map((l,j)=>[(j+.5)/count,l]),(c,X,Y,span)=>{
   c.fillStyle=color;const w=span/count*.55;
-  values.forEach((v,j)=>{const x=X((j+.5)/count);c.fillRect(x-w/2,Y(v),w,Y(0)-Y(v));});
+  values.forEach((v,j)=>{const x=X((j+.5)/count);c.fillRect(x-w/2,Y(v),w,Y(0)-Y(v));if(showLabels && v!=null)c.fillText(f(v),x,Y(v)-8);});
  }));
 }
 function scatter(points,color,max){
@@ -451,13 +451,14 @@ function agenda(rows){
  if(!entries.length)return '';
  const day=state.campoDia,origin=Date.parse(day+'T00:00:00Z');
  const offset=s=>(Date.parse(s+'Z')-origin)/3600000;
+ const br=s=>s.slice(0,10).split('-').reverse().join('/')+' '+s.slice(11,19);
  const bars=entries.flatMap(r=>(r[21]||[]).filter(([s,e])=>s&&e&&e>=s).map(([s,e,,cm])=>({s,e,cm,arrival:r[18],id:r[1]})));
  const end=Math.max(24,...bars.map(v=>Math.ceil(offset(v.e))));
  const axis='<div style="display:flex;justify-content:space-between;min-width:400px">'+Array.from({length:7},(_,i)=>'<span>'+f(end*i/6,0)+'h</span>').join('')+'</div>';
  const items=[...group(bars.sort((a,b)=>a.s.localeCompare(b.s)),b=>b.cm)];
- return panel('Agenda · '+text(selectedCrane),'Uma linha por prefixo. As faixas representam os intervalos reais de carregamento. Passe o cursor para ver início, fim e ID.',
+ return panel('Agenda · '+text(selectedCrane),'Uma linha por prefixo. As faixas representam os intervalos reais de carregamento. Passe o cursor para ver início, fim e duração.',
  table(['Prefixo CM','Horas de chegada',axis],items.map(([cm,list])=>[text(cm),[...new Set(list.map(b=>b.arrival.slice(11,16)))].join(', '),
- `<div style="position:relative;min-width:400px;height:18px;background:#f1f5f2">${list.map(b=>`<i title="${text(b.s+' → '+b.e+' · '+b.id)}" style="position:absolute;top:4px;height:10px;border-radius:5px;background:#28775f;left:${100*offset(b.s)/end}%;width:${100*(offset(b.e)-offset(b.s))/end}%"></i>`).join('')}</div>`])));
+ `<div style="position:relative;min-width:400px;height:18px;background:#f1f5f2">${list.map(b=>`<i title="${text('Início: '+br(b.s)+' · Fim: '+br(b.e)+' · Tempo total: '+min((offset(b.e)-offset(b.s))*60))}" style="position:absolute;top:4px;height:10px;border-radius:5px;background:#28775f;left:${100*offset(b.s)/end}%;width:${100*(offset(b.e)-offset(b.s))/end}%"></i>`).join('')}</div>`])));
 
 }
 function fieldDay(rows){
@@ -465,39 +466,68 @@ function fieldDay(rows){
  const cranes=rankMean(valid,5,11),mesos=rankMean(valid,3,11);
  const peak=[...group(rows,r=>JSON.stringify([hh(r),r[5],r[3]]))].sort((a,b)=>b[1].length-a[1].length)[0];
  const p=peak&&JSON.parse(peak[0]);
- const worst=r=>r?text(r.name)+' · '+min(r.avg):'—';
- const highlight=panel('Destaques do dia',iso(state.campoDia),kpis([['Maior tempo por grua',worst(cranes[0])],['Maior tempo por mesorregião',worst(mesos[0])],['Pico de chegadas',peak?peak[1].length+' às '+hour(p[0]):'—',p?text(p[1])+' · '+text(p[2]):'']]));
+ const worst=r=>{
+  if(!r)return 'Sem registros.';
+  const blocks=[...new Set(r.list.map(v=>v[4]))].sort();
+  return '<strong>'+text(r.name)+'</strong> · '+min(r.avg)+' em '+f(r.list.length,0)+' registros · Blocos: '+blocks.map(text).join(', ')+'.';
+ };
+ const highlight=panel('Destaques do dia',iso(state.campoDia),
+  '<p>Maior tempo por grua: '+worst(cranes[0])+'</p><p>Maior tempo por mesorregião: '+worst(mesos[0])+'</p><p>Pico de chegadas: '+
+  (peak?'<strong>'+f(peak[1].length,0)+' registros</strong> às '+hour(p[0])+' · '+text(p[1])+' · '+text(p[2])+'.':'Sem chegadas.')+'</p>');
  const hourly=slots.map(h=>mean(series(valid.filter(r=>hh(r)===h),11)));
 
- const heat=table(['Grua',...slots.map(hour)],cranes.map(c=>[`<button data-agenda="${text(c.name)}">${text(c.name)}</button>`,...slots.map(h=>{const sample=c.list.filter(r=>hh(r)===h),v=mean(series(sample,11));return `<span style="display:block;background:${shade(v)};padding:4px" title="${sample.length} viagens">${f(v)}</span>`;})]));
+ const counts=[...group(rows,r=>r[5])].sort(([a],[b])=>a.localeCompare(b)).map(([name,list])=>{
+  const bins=Array(24).fill(0);for(const r of list)bins[hh(r)]++;return [name,bins];
+ });
+ const peakCount=Math.max(1,...counts.flatMap(r=>r[1]));
+ const heat=table(['Grua',...slots.map(hour)],counts.map(([name,bins])=>[
+  `<button data-agenda="${text(name)}">${text(name)}</button>`,...bins.map(v=>{
+   const [bg,fg]=heatColor(v,peakCount);
+   return `<span style="display:block;background:${bg};color:${fg};padding:4px">${f(v,0)}</span>`;
+  })]));
  const dots=rows.filter(r=>r[16]!=null);
- const ranking='<div class="tablewrap"><table><thead><tr>'+['Grua','Tempo total','Fila crítica','Fila de carga','Carregamento','Amarração'].map(n=>'<th>'+n+'</th>').join('')+'</tr></thead><tbody>'+cranes.map(c=>`<tr style="background:${shade(c.avg)}"><td>${text(c.name)}</td><td>${min(c.avg)}</td>${fieldOrder.map(k=>'<td>'+min(sum(c.list,k)/c.list.length)+'</td>').join('')}</tr>`).join('')+'</tbody></table></div>';
+ const ranking='<div class="tablewrap"><table><thead><tr>'+['Grua','Registros','Tempo total','Fila crítica','Fila de carga','Carregamento','Amarração'].map(n=>'<th>'+n+'</th>').join('')+'</tr></thead><tbody>'+cranes.map(c=>`<tr style="background:${shade(c.avg)}"><td>${text(c.name)}</td><td>${f(c.list.length,0)}</td><td>${min(c.avg)}</td>${fieldOrder.map(k=>'<td>'+min(sum(c.list,k)/c.list.length)+'</td>').join('')}</tr>`).join('')+'</tbody></table></div>';
  return highlight+kpis([['Chegadas',f(rows.length,0)],['Tempo de campo médio',min(mean(series(valid,11)))],['Meta de campo',min(goal)],['P90',min(percentile(series(valid,11),.9))]])+
- panel('Tempo de campo por hora de chegada','Média total da etapa 2 em minutos. Clique na grua para abrir a agenda.',hourlyPlot(hourly)+heat)+agenda(rows)+
+ panel('Tempo de campo por hora de chegada','Média total da etapa 2 em minutos. Clique na grua para abrir a agenda.','<div class="plot-scroll"><div style="min-width:920px">'+hourlyPlot(hourly)+'</div></div><h3>Chegadas por hora e grua</h3><p>Quantidade de registros por hora. A cor mais intensa indica o maior volume do dia.</p>'+heat)+
  panel('Dispersão · hora × tempo de carregamento','Cada ponto é uma viagem, pela hora de chegada ao campo e duração do status Carregamento.',chart('Hora de chegada e minutos de carregamento',el=>plot(el,Math.max(1,...dots.map(r=>r[16]))*1.06,[0,6,12,18,24].map(h=>[h/24,h+'h']),(c,X,Y)=>{c.fillStyle='#14755588';for(const r of dots){c.beginPath();c.arc(X((hh(r)+Number(r[18].slice(14,16))/60)/24),Y(r[16]),2.5,0,7);c.fill();}})))+
- panel('Composição do tempo do dia','Minutos por viagem com etapa válida.',bars(fieldNames,fieldOrder.map(k=>valid.length?sum(valid,k)/valid.length:0),navy))+
+ panel('Composição do tempo do dia','Minutos por viagem com etapa válida.',bars(fieldNames,fieldOrder.map(k=>valid.length?sum(valid,k)/valid.length:null),navy,null,true))+
  panel('Gruas por tempo de campo','Da maior média para a menor. Vermelho indica tempo acima da meta de '+min(goal)+'.',ranking);
 }
 function hourlyPlot(values){
  return legend([[green,'Tempo médio de campo'],['#ba3a36','Meta '+min(goal)]])+chart('Campo médio por hora',el=>plot(el,Math.max(goal,...values)*1.1,[0,4,8,12,16,20,23].map(i=>[(i+.5)/24,hour(i)]),(c,X,Y,w)=>{
-  c.fillStyle=green;values.forEach((v,i)=>{if(v!=null)c.fillRect(X((i+.5)/24)-w/80,Y(v),w/40,Y(0)-Y(v));});
+  c.fillStyle=green;values.forEach((v,i)=>{if(v!=null){const x=X((i+.5)/24);c.fillRect(x-w/80,Y(v),w/40,Y(0)-Y(v));c.fillText(f(v),x,Y(v)-8);}});
   c.strokeStyle='#ba3a36';c.setLineDash([5,3]);c.beginPath();c.moveTo(X(0),Y(goal));c.lineTo(X(1),Y(goal));c.stroke();c.setLineDash([]);
  }));
+}
+function openDetail(title,html){
+ const dialog=document.createElement('dialog');
+ dialog.style.cssText='width:min(1100px,94vw);max-height:90vh;border:1px solid #c9d6ce;border-radius:12px;padding:18px;color:#183528';
+ dialog.setAttribute('aria-label',title);
+ dialog.innerHTML='<form method="dialog" style="text-align:right"><button autofocus>Fechar</button></form>'+html;
+ main.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();
+}
+function fractionSummary(list){
+ const values=series(list,16);
+ return [min(values.length?Math.min(...values):null),min(values.length?Math.max(...values):null),min(mean(values))];
 }
 function fieldSim(rows){
  const months=[...group(rows.filter(r=>r[11]!=null),r=>r[0].slice(0,7))].sort(([a],[b])=>a.localeCompare(b));
  const result=[];
+ removedScenarios.clear();
  for(const [month,list] of months){
   const ordered=[...list].sort((a,b)=>(b[16]??0)-(a[16]??0)||String(a[1]).localeCompare(String(b[1])));
   const baseline=mean(series(list,11));
   for(const pct of [0,10,20,30,40,50]){
    const n=Math.floor(list.length*pct/100),avg=mean(series(ordered.slice(n),11));
-   result.push([month,pct+'%',f(n,0),f(list.length-n,0),min(avg),min(baseline-avg)]);
+   const removed=ordered.slice(0,n),key=month+'/'+pct;
+   removedScenarios.set(key,removed);
+   const [lo,hi]=fractionSummary(removed);
+   result.push([month,n?`<button data-fraction="${key}">${pct}%</button>`:pct+'%',n?lo+' – '+hi:'—',f(n,0),f(list.length-n,0),min(avg),min(baseline-avg)]);
   }
  }
- return panel('Tempo de campo por mês','Tempo observado em minutos por viagem.',bars(months.map(m=>m[0]),months.map(m=>mean(series(m[1],11))),green))+
+ return panel('Tempo de campo por mês','Tempo observado em minutos por viagem.',bars(months.map(m=>m[0]),months.map(m=>mean(series(m[1],11))),green,null,true))+
  panel('Impacto dos maiores tempos de carregamento','Em cada mês, ordenamos viagens pelo tempo de carregamento e retiramos a fração indicada. Ganho é a redução da média de campo na amostra restante.',
- table(['Mês','Fração retirada','Retiradas','Consideradas','Campo médio','Ganho médio'],result));
+ table(['Mês','Fração retirada','Min e Max','Retiradas','Consideradas','Campo médio','Ganho médio'],result));
 }
 function fuelDay(){
  if(!state.postoDia){
@@ -592,6 +622,7 @@ function render(focusSearch=false,caret=null){
  }
  requestAnimationFrame(redraw);
 }
+const removedScenarios=new Map();
 const resetList=()=>{state.page=1;state.query='';state.sort='m';state.up=false;};
 main.addEventListener('click',e=>{
  const target=e.target.closest('button');
@@ -599,7 +630,13 @@ main.addEventListener('click',e=>{
  const d=target.dataset;
  if(d.printReport){window.print();return;}
  if(d.goal){saveGoal(target);return;}
- if(d.agenda){selectedCrane=selectedCrane===d.agenda?'':d.agenda;render();main.querySelector('[data-agenda="'+CSS.escape(d.agenda)+'"]')?.scrollIntoView({block:'nearest'});return;}
+ if(d.agenda){selectedCrane=d.agenda;openDetail('Agenda da grua '+d.agenda,agenda(tripFilter()));return;}
+ if(d.fraction){
+  const removed=removedScenarios.get(d.fraction)||[];
+  const groups=[...group(removed,r=>r[5])].sort(([a,ra],[b,rb])=>rb.length-ra.length||a.localeCompare(b));
+  openDetail('Registros retirados por grua',panel('Retiradas por grua · '+text(d.fraction.replace('/',' · '))+'%',f(removed.length,0)+' viagens retiradas. Tempos do status Carregamento em minutos.',
+   table(['Grua','Registros retirados','Mínimo','Máximo','Média'],groups.map(([name,list])=>[text(name),f(list.length,0),...fractionSummary(list)]))));return;
+ }
  if(d.saveCap){saveCapacity(target);return;}
  if(d.removeSource){Gerencia.remove(d.removeSource,atualizarTorre);}
  else if(d.tab){
